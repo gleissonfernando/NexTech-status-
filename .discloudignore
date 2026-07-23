@@ -1,0 +1,14 @@
+node_modules/
+dist/
+data/
+.git/
+.github/
+.codex/
+.agents/
+.env
+.env.*
+!.env.example
+*.log
+server.log
+package-lock.json
+README.md
