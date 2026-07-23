@@ -179,12 +179,14 @@ O projeto já inclui `discloud.config` na raiz para hospedagem como site/API Nod
 ```text
 TYPE=site
 ID=nextech-status
-MAIN=dist/server/index.js
+MAIN=index.js
 BUILD=npm run build
-START=npm run start
+START=node index.js
 RAM=512
 VERSION=latest
 ```
+
+`index.js` fica versionado na raiz para passar na validação inicial da Discloud; depois do `BUILD`, ele carrega `dist/server/index.js`.
 
 Antes do primeiro deploy, crie o subdomínio `nextech-status` na Discloud ou ajuste o campo `ID` para o subdomínio disponível na sua conta. A Discloud exige porta `8080` para sites/APIs, e o projeto já usa `PORT=8080` por padrão. O `package.json` declara Node `>=22` porque o backend usa `node:sqlite`.
 
