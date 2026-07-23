@@ -22,8 +22,8 @@ Sistema independente de Status Page para monitorar serviços da NexTech com API 
 
 URLs públicas recomendadas depois do deploy:
 
-- `https://status.nextech.discloud.app/api/public/status`
-- `https://status.nextech.discloud.app/api/public/status/events`
+- `https://nextech.com/api/public/status`
+- `https://nextech.com/api/public/status/events`
 
 Aliases de compatibilidade:
 
@@ -55,7 +55,7 @@ Use esta rota quando o sistema principal precisar enviar dados para o Status ind
 URL de produção:
 
 ```text
-https://status.nextech.discloud.app/api/ingest/status
+https://nextech.com/api/ingest/status
 ```
 
 Headers:
@@ -87,7 +87,7 @@ Payload:
 Exemplo no site principal:
 
 ```js
-await fetch("https://status.nextech.discloud.app/api/ingest/status", {
+await fetch("https://nextech.com/api/ingest/status", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -170,7 +170,7 @@ npm run build
 npm start
 ```
 
-Em produção, sirva o processo Node atrás de um proxy reverso apontando para `PORT`. Para subdomínio, use `https://status.nextech.discloud.app`. Para subpath, roteie `/status` no proxy para este serviço e mantenha `/api/public/status/*` acessível.
+Em produção, sirva o processo Node atrás de um proxy reverso apontando para `PORT`. O domínio público deste deploy é `https://nextech.com`; mantenha `/api/public/status/*` acessível.
 
 ## Deploy na Discloud
 
@@ -189,6 +189,15 @@ VERSION=latest
 Antes do primeiro deploy, crie o subdomínio `nextech-status` na Discloud ou ajuste o campo `ID` para o subdomínio disponível na sua conta. A Discloud exige porta `8080` para sites/APIs, e o projeto já usa `PORT=8080` por padrão. O `package.json` declara Node `>=22` porque o backend usa `node:sqlite`.
 
 Configure as variáveis no painel da Discloud usando `.env.example` como base. Em produção, `ADMIN_TOKEN` e `INGEST_TOKEN` precisam ter pelo menos 32 caracteres aleatórios e devem ser diferentes.
+
+Para usar `nextech.com` como domínio raiz, adicione no DNS do provedor os registros A exibidos pela Discloud:
+
+```text
+A  @  99.83.186.151
+A  @  75.2.96.173
+```
+
+Se o provedor exigir o nome completo em vez de `@`, use `nextech.com`. No Cloudflare, deixe esses registros como "DNS only" durante a verificação.
 
 Arquivos pesados ou locais ficam fora do upload por `.discloudignore`, incluindo `node_modules/`, `dist/`, `.git/`, logs e banco SQLite local.
 
