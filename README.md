@@ -124,22 +124,9 @@ O serviço `cache` é ocultado automaticamente quando `/health/redis` informa `c
 
 ## Variáveis de ambiente
 
-Copie `.env.example` para `.env` e ajuste:
+Crie `.env` apenas localmente ou configure as variáveis direto no painel da Discloud. Arquivos `.env*` não devem ser versionados.
 
-```bash
-PORT=8080
-PUBLIC_STATUS_URL=http://localhost:8080
-PLATFORM_BASE_URL=https://nextech.discloud.app
-PLATFORM_PANEL_URL=https://nextech.discloud.app
-CORS_ORIGINS=http://localhost:5173,http://localhost:8080
-ADMIN_TOKEN=replace-with-a-random-32-plus-character-admin-token
-INGEST_TOKEN=replace-with-a-different-random-32-plus-character-ingest-token
-DATABASE_PATH=./data/status.sqlite
-DEFAULT_CHECK_INTERVAL_SECONDS=60
-DEFAULT_TIMEOUT_MS=5000
-HISTORY_RETENTION_HOURS=72
-ENABLE_MONITORING=true
-```
+Variáveis usadas pela aplicação: `PORT`, `NODE_ENV`, `PUBLIC_STATUS_URL`, `PLATFORM_BASE_URL`, `PLATFORM_PANEL_URL`, `CORS_ORIGINS`, `ADMIN_TOKEN`, `INGEST_TOKEN`, `DATABASE_PATH`, `DEFAULT_CHECK_INTERVAL_SECONDS`, `DEFAULT_TIMEOUT_MS`, `HISTORY_RETENTION_HOURS`, `ENABLE_MONITORING`, `RATE_LIMIT_WINDOW_MS` e `RATE_LIMIT_MAX`.
 
 Em `NODE_ENV=production`, a aplicação falha ao iniciar se `ADMIN_TOKEN` ou `INGEST_TOKEN` estiverem ausentes, fracos ou com valores padrão. Use tokens diferentes, com pelo menos 32 caracteres aleatórios.
 
@@ -190,7 +177,7 @@ VERSION=latest
 
 Antes do primeiro deploy, crie o subdomínio `nextech-status` na Discloud ou ajuste o campo `ID` para o subdomínio disponível na sua conta. A Discloud exige porta `8080` para sites/APIs, e o projeto já usa `PORT=8080` por padrão. O `package.json` declara Node `>=22` porque o backend usa `node:sqlite`.
 
-Configure as variáveis no painel da Discloud usando `.env.example` como base. Em produção, `ADMIN_TOKEN` e `INGEST_TOKEN` precisam ter pelo menos 32 caracteres aleatórios e devem ser diferentes.
+Configure as variáveis no painel da Discloud. Em produção, `ADMIN_TOKEN` e `INGEST_TOKEN` precisam ter pelo menos 32 caracteres aleatórios e devem ser diferentes.
 
 Para usar `nextech.com` como domínio raiz, adicione no DNS do provedor os registros A exibidos pela Discloud:
 

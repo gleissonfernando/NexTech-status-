@@ -7,7 +7,6 @@ data/
 .agents/
 .env
 .env.*
-!.env.example
 *.log
 server.log
 package-lock.json
