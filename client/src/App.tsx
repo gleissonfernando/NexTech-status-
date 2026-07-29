@@ -377,34 +377,14 @@ function ServiceRow({
   return (
     <article className={`service-row ${selected ? "selected" : ""}`}>
       <button className="service-row__main" onClick={onSelect} aria-pressed={selected}>
+        <span className={`uptime-chip ${statusClass(service.currentStatus)}`}>
+          {service.currentStatus === "unknown" ? "0%" : `${service.uptimePercentage.toFixed(2)}%`}
+        </span>
         <span className="service-name">
           <strong>{service.name}</strong>
-          <small>{service.category}</small>
         </span>
-        <StatusBadge status={service.currentStatus} />
       </button>
-      <div className="service-row__metrics">
-        <span>
-          <small>Uptime 30d</small>
-          <strong>{service.uptimePercentage.toFixed(3)}%</strong>
-        </span>
-        <span>
-          <small>Resposta</small>
-          <strong className={latencyLevel(service.responseTimeMs)}>{formatMs(service.responseTimeMs)}</strong>
-        </span>
-        <span>
-          <small>Última verificação</small>
-          <strong>{formatTime(service.lastCheckedAt)}</strong>
-        </span>
-        <span>
-          <small>Região</small>
-          <strong>BR-Sudeste</strong>
-        </span>
-      </div>
       <HistoryBars service={service} windowKey={windowKey} />
-      <button className="text-button" onClick={onSelect}>
-        Ver detalhes
-      </button>
     </article>
   );
 }
@@ -424,18 +404,6 @@ function CategoryPanel({
   onToggle: () => void;
   onSelect: (id: string) => void;
 }) {
-  const worst = category.services.some((service) => service.currentStatus === "major_outage")
-    ? "major_outage"
-    : category.services.some((service) => service.currentStatus === "partial_outage")
-      ? "partial_outage"
-      : category.services.some((service) => service.currentStatus === "degraded")
-        ? "degraded"
-        : category.services.some((service) => service.currentStatus === "maintenance")
-          ? "maintenance"
-          : category.services.some((service) => service.currentStatus === "unknown")
-            ? "unknown"
-            : "operational";
-
   return (
     <section className="category-panel">
       <button className="category-header" onClick={onToggle} aria-expanded={open}>
@@ -444,9 +412,7 @@ function CategoryPanel({
         </span>
         <span>
           <strong>{category.name}</strong>
-          <small>{category.services.length} serviços monitorados</small>
         </span>
-        <StatusBadge status={worst} />
       </button>
       {open ? (
         <div className="service-list">
@@ -796,9 +762,7 @@ export function App() {
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [connection, setConnection] = useState("Conectando");
   const [error, setError] = useState("");
-  const [windowKey, setWindowKey] = useState<WindowKey>("24h");
-  const [compactTheme, setCompactTheme] = useState(false);
-  const [toast, setToast] = useState("");
+  const [windowKey] = useState<WindowKey>("24h");
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
   const [adminEnabled] = useState(() => window.location.hash === "#admin");
   const [liveIncidents, setLiveIncidents] = useState<LiveIncident[]>([]);
@@ -871,16 +835,6 @@ export function App() {
     [snapshot, selectedServiceId]
   );
 
-  const statusCounts = useMemo(() => {
-    const counts = { operational: 0, degraded: 0, partial: 0, critical: 0, maintenance: 0, unknown: 0 };
-    for (const service of allServices(snapshot)) {
-      if (service.currentStatus === "partial_outage") counts.partial += 1;
-      else if (service.currentStatus === "major_outage") counts.critical += 1;
-      else counts[service.currentStatus] += 1;
-    }
-    return counts;
-  }, [snapshot]);
-
   if (!snapshot) {
     return (
       <main className="app-shell loading-screen">
@@ -896,106 +850,25 @@ export function App() {
   }
 
   return (
-    <main className={`app-shell ${compactTheme ? "soft-mode" : ""}`}>
+    <main className="app-shell">
       <header className="topbar">
         <a className="brand" href="/" aria-label="NextTech Status">
           <span className="brand-mark">NT</span>
           <span>
-            <strong>NextTech Status</strong>
-            <small>Monitoramento de Serviços</small>
+            <strong>Status de Serviço - NextTech</strong>
           </span>
         </a>
-        <nav aria-label="Ações do painel">
-          <span className="live-indicator">
-            <span aria-hidden="true" />
-            Atualização automática ativa
-          </span>
-          <button className="icon-button" onClick={() => fetchSnapshot().then(setSnapshot)}>
-            Atualizar
-          </button>
-          <button className="icon-button" onClick={() => setCompactTheme((value) => !value)}>
-            Tema
-          </button>
-          <button className="primary-button" onClick={() => setToast("Subscrição registrada para atualizações NextTech.")}>
-            Subscrever atualizações
-          </button>
-          <select aria-label="Selecionar idioma" defaultValue="pt-BR">
-            <option value="pt-BR">PT</option>
-            <option value="en-US">EN</option>
-            <option value="es-ES">ES</option>
-          </select>
-        </nav>
       </header>
 
       <section className={`status-hero ${statusClass(snapshot.globalStatus)}`}>
-        <div>
-          <StatusBadge status={snapshot.globalStatus} />
-          <h1>Status dos Serviços</h1>
-          <p>Monitoramento em tempo real da infraestrutura NextTech.</p>
-          <strong className="global-message">{snapshot.globalMessage}</strong>
-          {error ? <span className="error-text">{error}</span> : null}
-        </div>
-        <div className="hero-metrics">
-          <span>
-            <small>Serviços</small>
-            <strong>{snapshot.servicesTotal}</strong>
-          </span>
-          <span>
-            <small>Última atualização</small>
-            <strong>{formatDate(snapshot.generatedAt)}</strong>
-          </span>
-          <span>
-            <small>Canal</small>
-            <strong>{connection}</strong>
-          </span>
-        </div>
+        <StatusBadge status={snapshot.globalStatus} />
+        <strong>{snapshot.globalMessage}</strong>
+        {error ? <span className="error-text">{error}</span> : null}
       </section>
 
-      <section className="summary-grid" aria-label="Resumo operacional">
-        <span className="summary-card operational">
-          <small>Operacionais</small>
-          <strong>{statusCounts.operational}</strong>
-        </span>
-        <span className="summary-card degraded">
-          <small>Atenção</small>
-          <strong>{statusCounts.degraded}</strong>
-        </span>
-        <span className="summary-card partial">
-          <small>Parcial</small>
-          <strong>{statusCounts.partial}</strong>
-        </span>
-        <span className="summary-card critical">
-          <small>Críticos</small>
-          <strong>{statusCounts.critical}</strong>
-        </span>
-        <span className="summary-card maintenance">
-          <small>Manutenção</small>
-          <strong>{statusCounts.maintenance}</strong>
-        </span>
-        <span className="summary-card unknown">
-          <small>Sem comunicação</small>
-          <strong>{statusCounts.unknown}</strong>
-        </span>
-      </section>
-
-      <div className="toolbar">
-        <span>
-          Página pública dos serviços críticos do ecossistema NextTech. Dados sensíveis permanecem ocultos.
-        </span>
-        <div className="segmented" role="tablist" aria-label="Janela de histórico">
-          {(Object.keys(windows) as WindowKey[]).map((key) => (
-            <button
-              key={key}
-              className={windowKey === key ? "active" : ""}
-              onClick={() => setWindowKey(key)}
-              role="tab"
-              aria-selected={windowKey === key}
-            >
-              {windows[key].label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <p className="status-copy">
+        Página de status para os serviços críticos do ecossistema NextTech.
+      </p>
 
       <section className="monitor-layout">
         <div className="category-stack">
@@ -1029,7 +902,6 @@ export function App() {
         <span>NextTech Status — Monitoramento de Serviços</span>
         <a href={platformUrl}>Painel NextTech</a>
       </footer>
-      {toast ? <div className="toast" role="status">{toast}</div> : null}
     </main>
   );
 }
