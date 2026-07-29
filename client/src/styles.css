@@ -566,7 +566,8 @@ textarea {
 }
 
 .history-bar.unknown {
-  background: var(--gray);
+  background: #111113;
+  border: 1px solid #1d1d21;
 }
 
 .status-hero.critical .status-badge,
@@ -700,6 +701,78 @@ textarea {
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   background: var(--surface-2);
+}
+
+.past-incidents {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.past-incidents h2 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.past-incidents__date {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.past-incidents__list {
+  display: grid;
+  gap: 10px;
+}
+
+.past-incident {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--yellow);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #080808;
+  color: var(--text);
+}
+
+.past-incident h3,
+.past-incident p {
+  margin: 0;
+}
+
+.past-incident h3 {
+  font-size: 0.95rem;
+}
+
+.past-incident p,
+.past-incident small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.past-incident.operational {
+  border-left-color: var(--green);
+}
+
+.past-incident.degraded {
+  border-left-color: var(--yellow);
+}
+
+.past-incident.partial {
+  border-left-color: var(--orange);
+}
+
+.past-incident.critical {
+  border-left-color: var(--red);
+}
+
+.past-incident.maintenance {
+  border-left-color: var(--blue);
+}
+
+.past-incident.unknown {
+  border-left-color: var(--gray);
 }
 
 .event-card__top {

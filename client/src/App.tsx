@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type PublicStatus =
   | "operational"
@@ -63,6 +63,16 @@ type Snapshot = {
   categories: Category[];
   incidents: Incident[];
   maintenances: Maintenance[];
+};
+
+type LiveIncident = {
+  id: string;
+  serviceId: string;
+  serviceName: string;
+  status: PublicStatus;
+  title: string;
+  summary: string;
+  createdAt: string;
 };
 
 const platformUrl = import.meta.env.VITE_PLATFORM_PANEL_URL ?? "https://nextech.discloud.app";
@@ -193,6 +203,85 @@ function normalizeHistory(history: HistoryStatus[], windowKey: WindowKey) {
   return [...filler, ...history];
 }
 
+function serviceStatusToHistory(status: PublicStatus): HistoryStatus {
+  if (status === "operational") return "operational";
+  if (status === "degraded") return "degraded";
+  if (status === "maintenance") return "maintenance";
+  if (status === "unknown") return "no_data";
+  return "down";
+}
+
+function visualHistory(service: Service, windowKey: WindowKey) {
+  const desired = windows[windowKey].bars;
+  const status = serviceStatusToHistory(service.currentStatus);
+  return Array.from({ length: desired }, () => status);
+}
+
+function incidentText(service: Service, previous?: PublicStatus) {
+  if (service.currentStatus === "operational") {
+    return {
+      title: `${service.name} voltou ao normal`,
+      summary: "O serviço respondeu novamente e as barras foram normalizadas em verde."
+    };
+  }
+  if (service.currentStatus === "degraded") {
+    return {
+      title: `${service.name} com baixa latência`,
+      summary:
+        "O monitor detectou baixa latência/atenção operacional. O serviço continua respondendo, mas as barras ficam amarelas enquanto a condição persistir."
+    };
+  }
+  if (service.currentStatus === "partial_outage") {
+    return {
+      title: `${service.name} parcialmente degradado`,
+      summary:
+        "Falhas parciais foram detectadas em tempo real. A equipa deve acompanhar a recuperação antes de considerar o serviço estável."
+    };
+  }
+  if (service.currentStatus === "major_outage") {
+    return {
+      title: `${service.name} crítico`,
+      summary:
+        "O serviço entrou em estado crítico. As barras ficam vermelhas até o monitor receber uma recuperação consistente."
+    };
+  }
+  if (service.currentStatus === "maintenance") {
+    return {
+      title: `${service.name} em manutenção`,
+      summary: "Uma janela de manutenção foi detectada e o serviço está marcado em azul."
+    };
+  }
+  return {
+    title: `${service.name} desligado ou sem comunicação`,
+    summary:
+      previous
+        ? "O monitor não recebeu marcação válida do serviço. As barras ficam vazias enquanto ele estiver desligado ou sem comunicação."
+        : "O serviço iniciou sem comunicação. As barras ficam vazias enquanto ele estiver desligado."
+  };
+}
+
+function collectLiveIncidents(previous: Snapshot | null, next: Snapshot) {
+  if (!previous) return [];
+  const previousServices = new Map(allServices(previous).map((service) => [service.id, service]));
+  const createdAt = new Date().toISOString();
+
+  return allServices(next)
+    .filter((service) => previousServices.get(service.id)?.currentStatus !== service.currentStatus)
+    .map((service) => {
+      const previousStatus = previousServices.get(service.id)?.currentStatus;
+      const text = incidentText(service, previousStatus);
+      return {
+        id: `${service.id}-${service.currentStatus}-${createdAt}`,
+        serviceId: service.id,
+        serviceName: service.name,
+        status: service.currentStatus,
+        title: text.title,
+        summary: text.summary,
+        createdAt
+      };
+    });
+}
+
 function StatusBadge({ status }: { status: PublicStatus | Snapshot["globalStatus"] }) {
   const meta = statusMeta[status];
   return (
@@ -214,7 +303,7 @@ function HistoryBars({
   service: Service;
   windowKey: WindowKey;
 }) {
-  const history = normalizeHistory(service.history, windowKey);
+  const history = visualHistory(service, windowKey);
   const now = Date.now();
   const stepMs = windowKey === "1h" ? 150000 : windowKey === "6h" ? 450000 : 900000;
 
@@ -245,6 +334,32 @@ function HistoryBars({
         <span>agora</span>
       </div>
     </div>
+  );
+}
+
+function LiveIncidentFeed({ incidents }: { incidents: LiveIncident[] }) {
+  if (incidents.length === 0) return null;
+
+  return (
+    <section className="past-incidents">
+      <h2>Past Incidents</h2>
+      <div className="past-incidents__date">
+        {new Intl.DateTimeFormat("pt-BR", { dateStyle: "long" }).format(
+          new Date(incidents[0].createdAt)
+        )}
+      </div>
+      <div className="past-incidents__list">
+        {incidents.map((incident) => (
+          <article key={incident.id} className={`past-incident ${statusClass(incident.status)}`}>
+            <h3>{incident.title}</h3>
+            <p>{incident.summary}</p>
+            <small>
+              Detectado: {formatDate(incident.createdAt)} · Serviço: {incident.serviceName}
+            </small>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -438,6 +553,8 @@ function Incidents({
     activeOnly ? incident.status !== "resolved" : incident.status === "resolved"
   );
 
+  if (incidents.length === 0) return null;
+
   return (
     <section className="section-block">
       <div className="section-heading">
@@ -488,6 +605,8 @@ function Incidents({
 }
 
 function Maintenances({ snapshot }: { snapshot: Snapshot }) {
+  if (snapshot.maintenances.length === 0) return null;
+
   return (
     <section className="section-block">
       <div className="section-heading">
@@ -682,42 +801,56 @@ export function App() {
   const [toast, setToast] = useState("");
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
   const [adminEnabled] = useState(() => window.location.hash === "#admin");
+  const [liveIncidents, setLiveIncidents] = useState<LiveIncident[]>([]);
+  const previousSnapshotRef = useRef<Snapshot | null>(null);
 
   useEffect(() => {
     let fallbackTimer: number | undefined;
     let eventSource: EventSource | null = null;
 
+    function applySnapshot(data: Snapshot, collectEvents: boolean) {
+      if (collectEvents) {
+        const nextIncidents = collectLiveIncidents(previousSnapshotRef.current, data);
+        if (nextIncidents.length) {
+          setLiveIncidents((current) => [...nextIncidents, ...current].slice(0, 12));
+        }
+      }
+      previousSnapshotRef.current = data;
+      setSnapshot(data);
+      setOpenCategories((current) => {
+        if (Object.keys(current).length) return current;
+        return Object.fromEntries(data.categories.map((category) => [category.name, true]));
+      });
+      setError("");
+    }
+
     fetchSnapshot()
-      .then((data) => {
-        setSnapshot(data);
-        setOpenCategories((current) => {
-          if (Object.keys(current).length) return current;
-          return Object.fromEntries(data.categories.map((category) => [category.name, true]));
-        });
-        setError("");
-      })
+      .then((data) => applySnapshot(data, false))
       .catch(() => setError("Não foi possível carregar o status agora."));
 
     try {
       eventSource = new EventSource("/api/public/status/events");
       eventSource.addEventListener("status-update", (event) => {
         const data = JSON.parse((event as MessageEvent).data) as Snapshot;
-        setSnapshot(data);
+        applySnapshot(data, true);
         setConnection("Tempo real");
-        setError("");
       });
       eventSource.onerror = () => {
         setConnection("Fallback 10s");
         if (!fallbackTimer) {
           fallbackTimer = window.setInterval(() => {
-            fetchSnapshot().then(setSnapshot).catch(() => setError("Fallback sem resposta."));
+            fetchSnapshot()
+              .then((data) => applySnapshot(data, true))
+              .catch(() => setError("Fallback sem resposta."));
           }, 10000);
         }
       };
     } catch {
       setConnection("Fallback 10s");
       fallbackTimer = window.setInterval(() => {
-        fetchSnapshot().then(setSnapshot).catch(() => setError("Fallback sem resposta."));
+        fetchSnapshot()
+          .then((data) => applySnapshot(data, true))
+          .catch(() => setError("Fallback sem resposta."));
       }, 10000);
     }
 
@@ -888,6 +1021,7 @@ export function App() {
       <Incidents snapshot={snapshot} activeOnly />
       <Maintenances snapshot={snapshot} />
       <Incidents snapshot={snapshot} activeOnly={false} />
+      <LiveIncidentFeed incidents={liveIncidents} />
       {adminEnabled ? <AdminPanel onChanged={setSnapshot} /> : null}
       <DetailPanel service={selectedService} onClose={() => setSelectedServiceId(null)} />
 
