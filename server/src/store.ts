@@ -440,7 +440,11 @@ export class StatusStore {
         JSON.stringify(input.details)
       );
 
-    const uptimePercentage = this.calculateUptime(input.serviceId);
+    const remoteUptimePercentage = input.details.remoteUptimePercentage;
+    const uptimePercentage =
+      typeof remoteUptimePercentage === "number" && Number.isFinite(remoteUptimePercentage)
+        ? Number(remoteUptimePercentage.toFixed(3))
+        : this.calculateUptime(input.serviceId);
     this.db
       .prepare(
         `
