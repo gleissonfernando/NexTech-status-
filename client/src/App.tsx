@@ -350,15 +350,8 @@ function CategoryPanel({
   );
 }
 
-function DetailPanel({ service }: { service: Service | null }) {
-  if (!service) {
-    return (
-      <aside className="side-panel">
-        <h2>Detalhes do Serviço</h2>
-        <p className="muted">Selecione um serviço para consultar métricas, eventos e histórico.</p>
-      </aside>
-    );
-  }
+function DetailPanel({ service, onClose }: { service: Service | null; onClose: () => void }) {
+  if (!service) return null;
 
   const uptime7d = Math.min(100, service.uptimePercentage + 0.018);
   const uptime90d = Math.max(0, service.uptimePercentage - 0.24);
@@ -366,14 +359,17 @@ function DetailPanel({ service }: { service: Service | null }) {
   const bars = [0.7, 0.9, 0.62, 0.78, 0.56, 0.82, 0.68, 0.74, 0.58, 0.86, 0.7, 0.64];
 
   return (
-    <aside className="side-panel">
+    <aside className="detail-modal" role="dialog" aria-modal="true" aria-label={`Detalhes de ${service.name}`}>
       <div className="panel-title">
         <span>
           <h2>{service.name}</h2>
           <small>{service.description}</small>
         </span>
-        <StatusBadge status={service.currentStatus} />
+        <button className="icon-button" onClick={onClose}>
+          Fechar
+        </button>
       </div>
+      <StatusBadge status={service.currentStatus} />
 
       <div className="metric-grid">
         <span>
@@ -685,6 +681,7 @@ export function App() {
   const [compactTheme, setCompactTheme] = useState(false);
   const [toast, setToast] = useState("");
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
+  const [adminEnabled] = useState(() => window.location.hash === "#admin");
 
   useEffect(() => {
     let fallbackTimer: number | undefined;
@@ -693,7 +690,6 @@ export function App() {
     fetchSnapshot()
       .then((data) => {
         setSnapshot(data);
-        setSelectedServiceId((current) => current ?? data.categories[0]?.services[0]?.id ?? null);
         setOpenCategories((current) => {
           if (Object.keys(current).length) return current;
           return Object.fromEntries(data.categories.map((category) => [category.name, true]));
@@ -707,7 +703,6 @@ export function App() {
       eventSource.addEventListener("status-update", (event) => {
         const data = JSON.parse((event as MessageEvent).data) as Snapshot;
         setSnapshot(data);
-        setSelectedServiceId((current) => current ?? data.categories[0]?.services[0]?.id ?? null);
         setConnection("Tempo real");
         setError("");
       });
@@ -802,7 +797,7 @@ export function App() {
       <section className={`status-hero ${statusClass(snapshot.globalStatus)}`}>
         <div>
           <StatusBadge status={snapshot.globalStatus} />
-          <h1>NextTech Status — Monitoramento de Serviços</h1>
+          <h1>Status dos Serviços</h1>
           <p>Monitoramento em tempo real da infraestrutura NextTech.</p>
           <strong className="global-message">{snapshot.globalMessage}</strong>
           {error ? <span className="error-text">{error}</span> : null}
@@ -888,13 +883,13 @@ export function App() {
             />
           ))}
         </div>
-        <DetailPanel service={selectedService} />
       </section>
 
       <Incidents snapshot={snapshot} activeOnly />
       <Maintenances snapshot={snapshot} />
       <Incidents snapshot={snapshot} activeOnly={false} />
-      <AdminPanel onChanged={setSnapshot} />
+      {adminEnabled ? <AdminPanel onChanged={setSnapshot} /> : null}
+      <DetailPanel service={selectedService} onClose={() => setSelectedServiceId(null)} />
 
       <footer className="footer">
         <span>NextTech Status — Monitoramento de Serviços</span>
