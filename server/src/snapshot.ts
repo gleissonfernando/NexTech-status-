@@ -7,8 +7,8 @@ import type {
   StatusSnapshot
 } from "./types.js";
 
-const HISTORY_BARS = 60;
-const HISTORY_INTERVAL_SECONDS = 60;
+const HISTORY_BARS = 96;
+const HISTORY_INTERVAL_SECONDS = 900;
 
 function toHistoryStatus(status: PublicStatus): HistoryStatus {
   if (status === "operational") return "operational";
@@ -111,8 +111,11 @@ export function buildSnapshot(store: StatusStore): StatusSnapshot {
     .filter((incident) => incident.status !== "resolved");
   const incidents = [...activeIncidents, ...store.listIncidents(20)]
     .filter((incident, index, all) => all.findIndex((item) => item.id === incident.id) === index)
-    .slice(0, 20);
-  const maintenances = store.listMaintenances(20);
+    .slice(0, 20)
+    .map(({ createdAt: _createdAt, updatedAt: _updatedAt, ...incident }) => incident);
+  const maintenances = store
+    .listMaintenances(20)
+    .map(({ createdAt: _createdAt, updatedAt: _updatedAt, ...maintenance }) => maintenance);
   const { globalStatus, globalMessage } = calculateGlobalStatus(
     services,
     activeIncidents.length
@@ -135,7 +138,7 @@ export function buildSnapshot(store: StatusStore): StatusSnapshot {
     historyWindow: {
       bars: HISTORY_BARS,
       intervalSeconds: HISTORY_INTERVAL_SECONDS,
-      label: "Últimos 60 minutos"
+      label: "Últimas 24 horas"
     },
     categories,
     incidents,

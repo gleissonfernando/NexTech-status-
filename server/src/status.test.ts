@@ -64,12 +64,12 @@ describe("NexTech Status API", () => {
 
     expect(response.body.globalStatus).toBe("operational");
     expect(response.body.historyWindow).toEqual({
-      bars: 60,
-      intervalSeconds: 60,
-      label: "Últimos 60 minutos"
+      bars: 96,
+      intervalSeconds: 900,
+      label: "Últimas 24 horas"
     });
-    expect(response.body.servicesTotal).toBe(7);
-    expect(response.body.categories.flatMap((category: { services: unknown[] }) => category.services)).toHaveLength(7);
+    expect(response.body.servicesTotal).toBe(6);
+    expect(response.body.categories.flatMap((category: { services: unknown[] }) => category.services)).toHaveLength(response.body.servicesTotal);
     expect(JSON.stringify(response.body)).not.toContain("healthSources");
     expect(JSON.stringify(response.body)).not.toContain("health_sources");
     expect(JSON.stringify(response.body)).not.toContain("createdAt");
@@ -161,10 +161,28 @@ describe("NexTech Status API", () => {
   it("updates global status when a critical health check fails", async () => {
     runtime!.close();
     const mock = await startMockPlatform((pathName) => {
-      if (pathName === "/health/database") {
-        return { status: 503, body: { ok: false, status: "down", latencyMs: 1200 } };
+      if (pathName === "/api/status") {
+        return {
+          status: 200,
+          body: {
+            categories: [
+              {
+                id: "infrastructure",
+                name: "Infraestrutura",
+                services: [
+                  {
+                    id: "data-storage",
+                    currentStatus: "major_outage",
+                    responseTimeMs: 1200,
+                    uptimePercentage: 99.1
+                  }
+                ]
+              }
+            ]
+          }
+        };
       }
-      return { status: 200, body: { ok: true, status: "ok", configured: true, enabled: true } };
+      return { status: 404, body: { ok: false } };
     });
     store = new StatusStore(":memory:");
     runtime = createApp({

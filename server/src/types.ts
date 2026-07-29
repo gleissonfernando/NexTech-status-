@@ -111,6 +111,6 @@ export interface StatusSnapshot {
     label: string;
   };
   categories: StatusCategory[];
-  incidents: IncidentRecord[];
-  maintenances: MaintenanceRecord[];
+  incidents: Omit<IncidentRecord, "createdAt" | "updatedAt">[];
+  maintenances: Omit<MaintenanceRecord, "createdAt" | "updatedAt">[];
 }

@@ -2,18 +2,17 @@ import type { ServiceRecord } from "./types.js";
 
 const now = new Date().toISOString();
 
+const monitoredApiPath = "/api/status";
+
 export const defaultServices: ServiceRecord[] = [
   {
     id: "nextech-dashboard",
     category: "Web",
-    name: "Dashboard NexTech",
+    name: "Dashboard NextTech",
     description: "Dashboard pública, autenticação e rotas principais.",
     critical: true,
     public: true,
-    healthSources: [
-      { path: "/health", label: "Health geral", latencyWarningMs: 1500 },
-      { path: "/health/metrics", label: "Métricas de rotas", latencyWarningMs: 1500 }
-    ],
+    healthSources: [{ path: monitoredApiPath, label: "Status API - Dashboard", latencyWarningMs: 1500 }],
     currentStatus: "unknown",
     responseTimeMs: null,
     uptimePercentage: 100,
@@ -28,11 +27,7 @@ export const defaultServices: ServiceRecord[] = [
     description: "API pública sanitizada da plataforma.",
     critical: true,
     public: true,
-    healthSources: [
-      { path: "/health", label: "Health geral", latencyWarningMs: 1500 },
-      { path: "/api/health", label: "API health", latencyWarningMs: 1500 },
-      { path: "/health/metrics", label: "Métricas de API", latencyWarningMs: 1500 }
-    ],
+    healthSources: [{ path: monitoredApiPath, label: "Status API - API Pública", latencyWarningMs: 1500 }],
     currentStatus: "unknown",
     responseTimeMs: null,
     uptimePercentage: 100,
@@ -47,7 +42,7 @@ export const defaultServices: ServiceRecord[] = [
     description: "Conexão do bot principal e eventos do Discord.",
     critical: true,
     public: true,
-    healthSources: [{ path: "/health/bots", label: "Bots", latencyWarningMs: 1500 }],
+    healthSources: [{ path: monitoredApiPath, label: "Status API - Bot Discord", latencyWarningMs: 1500 }],
     currentStatus: "unknown",
     responseTimeMs: null,
     uptimePercentage: 100,
@@ -62,10 +57,7 @@ export const defaultServices: ServiceRecord[] = [
     description: "Execução de filas, rotinas e tarefas assíncronas.",
     critical: false,
     public: true,
-    healthSources: [
-      { path: "/health", label: "Jobs no health geral", latencyWarningMs: 1500 },
-      { path: "/health/metrics", label: "Métricas internas", latencyWarningMs: 1500 }
-    ],
+    healthSources: [{ path: monitoredApiPath, label: "Status API - Jobs", latencyWarningMs: 1500 }],
     currentStatus: "unknown",
     responseTimeMs: null,
     uptimePercentage: 100,
@@ -80,7 +72,7 @@ export const defaultServices: ServiceRecord[] = [
     description: "Checkout, PIX e confirmação de pedidos.",
     critical: false,
     public: true,
-    healthSources: [{ path: "/health/payments", label: "Pagamentos", latencyWarningMs: 1500 }],
+    healthSources: [{ path: monitoredApiPath, label: "Status API - Pagamentos", latencyWarningMs: 1500 }],
     currentStatus: "unknown",
     responseTimeMs: null,
     uptimePercentage: 100,
@@ -95,22 +87,7 @@ export const defaultServices: ServiceRecord[] = [
     description: "Persistência de dados da plataforma.",
     critical: true,
     public: true,
-    healthSources: [{ path: "/health/database", label: "Banco de dados", latencyWarningMs: 1000 }],
-    currentStatus: "unknown",
-    responseTimeMs: null,
-    uptimePercentage: 100,
-    lastCheckedAt: null,
-    createdAt: now,
-    updatedAt: now
-  },
-  {
-    id: "cache",
-    category: "Infraestrutura",
-    name: "Cache",
-    description: "Cache e operações de apoio em tempo real.",
-    critical: false,
-    public: true,
-    healthSources: [{ path: "/health/redis", label: "Redis / Cache", latencyWarningMs: 500 }],
+    healthSources: [{ path: monitoredApiPath, label: "Status API - Dados", latencyWarningMs: 1000 }],
     currentStatus: "unknown",
     responseTimeMs: null,
     uptimePercentage: 100,

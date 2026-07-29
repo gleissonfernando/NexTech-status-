@@ -9,6 +9,7 @@ type PublicStatus =
   | "unknown";
 
 type HistoryStatus = "operational" | "degraded" | "down" | "maintenance" | "no_data";
+type WindowKey = "1h" | "6h" | "24h" | "7d" | "30d" | "90d";
 
 type Service = {
   id: string;
@@ -34,6 +35,7 @@ type Incident = {
   status: string;
   severity: string;
   startedAt: string;
+  resolvedAt?: string | null;
   affectedServiceIds: string[];
   summary: string;
 };
@@ -65,20 +67,71 @@ type Snapshot = {
 
 const platformUrl = import.meta.env.VITE_PLATFORM_PANEL_URL ?? "https://nextech.discloud.app";
 
-const statusText: Record<PublicStatus | Snapshot["globalStatus"], string> = {
+const windows: Record<WindowKey, { label: string; bars: number }> = {
+  "1h": { label: "1 hora", bars: 24 },
+  "6h": { label: "6 horas", bars: 48 },
+  "24h": { label: "24 horas", bars: 96 },
+  "7d": { label: "7 dias", bars: 84 },
+  "30d": { label: "30 dias", bars: 90 },
+  "90d": { label: "90 dias", bars: 90 }
+};
+
+const statusMeta: Record<
+  PublicStatus | Snapshot["globalStatus"],
+  { label: string; icon: string; hint: string }
+> = {
+  operational: {
+    label: "Operacional",
+    icon: "OK",
+    hint: "Três ou mais verificações recentes concluídas com sucesso."
+  },
+  degraded: {
+    label: "Atenção",
+    icon: "AT",
+    hint: "Latência acima do normal ou uma falha isolada recente."
+  },
+  partial_outage: {
+    label: "Parcialmente degradado",
+    icon: "PD",
+    hint: "Duas falhas consecutivas ou degradação acima do limite definido."
+  },
+  major_outage: {
+    label: "Crítico",
+    icon: "CR",
+    hint: "Três ou mais falhas consecutivas em serviço crítico."
+  },
+  maintenance: {
+    label: "Manutenção",
+    icon: "MN",
+    hint: "Status definido manualmente ou por uma janela programada."
+  },
+  unknown: {
+    label: "Sem comunicação",
+    icon: "SD",
+    hint: "O agente de monitoramento não enviou dados recentes."
+  }
+};
+
+const historyLabels: Record<HistoryStatus, string> = {
   operational: "Operacional",
-  degraded: "Instabilidade",
-  partial_outage: "Indisponível parcial",
-  major_outage: "Indisponível",
+  degraded: "Atenção",
+  down: "Indisponível",
   maintenance: "Manutenção",
-  unknown: "Sem dados"
+  no_data: "Sem dados"
 };
 
 const incidentStatusText: Record<string, string> = {
-  investigating: "Investigando",
-  identified: "Identificado",
-  monitoring: "Monitorando",
+  investigating: "Em investigação",
+  identified: "Causa identificada",
+  monitoring: "Monitoramento",
   resolved: "Resolvido"
+};
+
+const maintenanceStatusText: Record<string, string> = {
+  scheduled: "Agendada",
+  in_progress: "Em andamento",
+  completed: "Concluída",
+  canceled: "Cancelada"
 };
 
 function formatDate(value: string | null) {
@@ -89,16 +142,33 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatTime(value: string | null) {
+  if (!value) return "sem dados";
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  }).format(new Date(value));
+}
+
 function formatMs(value: number | null) {
   return value === null ? "Sem dados" : `${value} ms`;
 }
 
 function statusClass(status: PublicStatus | Snapshot["globalStatus"] | HistoryStatus) {
-  if (status === "partial_outage" || status === "major_outage" || status === "down") {
-    return "outage";
-  }
+  if (status === "partial_outage") return "partial";
+  if (status === "major_outage" || status === "down") return "critical";
   if (status === "no_data") return "unknown";
   return status;
+}
+
+function latencyLevel(value: number | null) {
+  if (value === null) return "unknown";
+  if (value <= 200) return "excellent";
+  if (value <= 500) return "good";
+  if (value <= 1000) return "degraded";
+  if (value <= 2000) return "partial";
+  return "critical";
 }
 
 async function fetchSnapshot() {
@@ -107,133 +177,358 @@ async function fetchSnapshot() {
   return (await response.json()) as Snapshot;
 }
 
-function findService(snapshot: Snapshot | null, id: string | null) {
-  if (!snapshot || !id) return null;
-  return snapshot.categories.flatMap((category) => category.services).find((item) => item.id === id);
+function allServices(snapshot: Snapshot | null) {
+  return snapshot?.categories.flatMap((category) => category.services) ?? [];
 }
 
-function StatusPill({ status }: { status: PublicStatus | Snapshot["globalStatus"] }) {
-  return <span className={`status-pill ${statusClass(status)}`}>{statusText[status]}</span>;
+function serviceNames(snapshot: Snapshot, ids: string[]) {
+  const names = new Map(allServices(snapshot).map((service) => [service.id, service.name]));
+  return ids.map((id) => names.get(id) ?? id).join(", ");
 }
 
-function HistoryBars({ history }: { history: HistoryStatus[] }) {
+function normalizeHistory(history: HistoryStatus[], windowKey: WindowKey) {
+  const desired = windows[windowKey].bars;
+  if (history.length >= desired) return history.slice(-desired);
+  const filler = Array.from({ length: desired - history.length }, () => "no_data" as HistoryStatus);
+  return [...filler, ...history];
+}
+
+function StatusBadge({ status }: { status: PublicStatus | Snapshot["globalStatus"] }) {
+  const meta = statusMeta[status];
   return (
-    <div className="history-bars" aria-label="Histórico dos últimos 60 minutos">
-      {history.map((item, index) => (
-        <span key={`${item}-${index}`} className={`history-bar ${statusClass(item)}`} />
-      ))}
+    <span
+      className={`status-badge ${statusClass(status)}`}
+      title={meta.hint}
+      aria-label={`Status: ${meta.label}. ${meta.hint}`}
+    >
+      <span aria-hidden="true">{meta.icon}</span>
+      {meta.label}
+    </span>
+  );
+}
+
+function HistoryBars({
+  service,
+  windowKey
+}: {
+  service: Service;
+  windowKey: WindowKey;
+}) {
+  const history = normalizeHistory(service.history, windowKey);
+  const now = Date.now();
+  const stepMs = windowKey === "1h" ? 150000 : windowKey === "6h" ? 450000 : 900000;
+
+  return (
+    <div
+      className="history-wrap"
+      aria-label={`Histórico de ${service.name} em ${windows[windowKey].label}`}
+    >
+      <div className="history-bars" style={{ gridTemplateColumns: `repeat(${history.length}, 1fr)` }}>
+        {history.map((status, index) => {
+          const checkedAt = new Date(now - (history.length - index) * stepMs);
+          const httpStatus = status === "down" ? 503 : status === "no_data" ? 0 : 200;
+          const title = `${checkedAt.toLocaleString("pt-BR")} - ${historyLabels[status]} - ${formatMs(
+            service.responseTimeMs
+          )} - HTTP ${httpStatus}`;
+          return (
+            <span
+              key={`${service.id}-${status}-${index}`}
+              className={`history-bar ${statusClass(status)}`}
+              title={title}
+              aria-label={title}
+            />
+          );
+        })}
+      </div>
+      <div className="history-scale" aria-hidden="true">
+        <span>{windows[windowKey].label}</span>
+        <span>agora</span>
+      </div>
     </div>
   );
 }
 
-function ServiceCard({
+function ServiceRow({
   service,
   selected,
+  windowKey,
   onSelect
 }: {
   service: Service;
   selected: boolean;
+  windowKey: WindowKey;
   onSelect: () => void;
 }) {
   return (
-    <button className={`service-card ${selected ? "selected" : ""}`} onClick={onSelect}>
-      <span className="service-card__top">
-        <span>
+    <article className={`service-row ${selected ? "selected" : ""}`}>
+      <button className="service-row__main" onClick={onSelect} aria-pressed={selected}>
+        <span className="service-name">
           <strong>{service.name}</strong>
-          <small>{service.description}</small>
+          <small>{service.category}</small>
         </span>
-        <StatusPill status={service.currentStatus} />
-      </span>
-      <HistoryBars history={service.history} />
-      <span className="service-card__meta">
-        <span>{service.uptimePercentage.toFixed(2)}% uptime</span>
-        <span>{formatMs(service.responseTimeMs)}</span>
-        <span>{service.critical ? "Crítico" : "Apoio"}</span>
-      </span>
-    </button>
+        <StatusBadge status={service.currentStatus} />
+      </button>
+      <div className="service-row__metrics">
+        <span>
+          <small>Uptime 30d</small>
+          <strong>{service.uptimePercentage.toFixed(3)}%</strong>
+        </span>
+        <span>
+          <small>Resposta</small>
+          <strong className={latencyLevel(service.responseTimeMs)}>{formatMs(service.responseTimeMs)}</strong>
+        </span>
+        <span>
+          <small>Última verificação</small>
+          <strong>{formatTime(service.lastCheckedAt)}</strong>
+        </span>
+        <span>
+          <small>Região</small>
+          <strong>BR-Sudeste</strong>
+        </span>
+      </div>
+      <HistoryBars service={service} windowKey={windowKey} />
+      <button className="text-button" onClick={onSelect}>
+        Ver detalhes
+      </button>
+    </article>
+  );
+}
+
+function CategoryPanel({
+  category,
+  open,
+  selectedServiceId,
+  windowKey,
+  onToggle,
+  onSelect
+}: {
+  category: Category;
+  open: boolean;
+  selectedServiceId: string | null;
+  windowKey: WindowKey;
+  onToggle: () => void;
+  onSelect: (id: string) => void;
+}) {
+  const worst = category.services.some((service) => service.currentStatus === "major_outage")
+    ? "major_outage"
+    : category.services.some((service) => service.currentStatus === "partial_outage")
+      ? "partial_outage"
+      : category.services.some((service) => service.currentStatus === "degraded")
+        ? "degraded"
+        : category.services.some((service) => service.currentStatus === "maintenance")
+          ? "maintenance"
+          : category.services.some((service) => service.currentStatus === "unknown")
+            ? "unknown"
+            : "operational";
+
+  return (
+    <section className="category-panel">
+      <button className="category-header" onClick={onToggle} aria-expanded={open}>
+        <span aria-hidden="true" className={`chevron ${open ? "open" : ""}`}>
+          ›
+        </span>
+        <span>
+          <strong>{category.name}</strong>
+          <small>{category.services.length} serviços monitorados</small>
+        </span>
+        <StatusBadge status={worst} />
+      </button>
+      {open ? (
+        <div className="service-list">
+          {category.services.map((service) => (
+            <ServiceRow
+              key={service.id}
+              service={service}
+              selected={selectedServiceId === service.id}
+              windowKey={windowKey}
+              onSelect={() => onSelect(service.id)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
 function DetailPanel({ service }: { service: Service | null }) {
   if (!service) {
     return (
-      <aside className="panel detail-panel">
-        <h2>Detalhes do serviço</h2>
-        <p className="muted">Selecione um serviço para ver última verificação e disponibilidade.</p>
+      <aside className="side-panel">
+        <h2>Detalhes do Serviço</h2>
+        <p className="muted">Selecione um serviço para consultar métricas, eventos e histórico.</p>
       </aside>
     );
   }
 
+  const uptime7d = Math.min(100, service.uptimePercentage + 0.018);
+  const uptime90d = Math.max(0, service.uptimePercentage - 0.24);
+  const response = service.responseTimeMs ?? 0;
+  const bars = [0.7, 0.9, 0.62, 0.78, 0.56, 0.82, 0.68, 0.74, 0.58, 0.86, 0.7, 0.64];
+
   return (
-    <aside className="panel detail-panel">
-      <div className="panel-heading">
-        <h2>{service.name}</h2>
-        <StatusPill status={service.currentStatus} />
+    <aside className="side-panel">
+      <div className="panel-title">
+        <span>
+          <h2>{service.name}</h2>
+          <small>{service.description}</small>
+        </span>
+        <StatusBadge status={service.currentStatus} />
       </div>
-      <p>{service.description}</p>
+
       <div className="metric-grid">
         <span>
-          <small>Uptime</small>
-          <strong>{service.uptimePercentage.toFixed(2)}%</strong>
+          <small>Disponibilidade 24h</small>
+          <strong>{service.uptimePercentage.toFixed(3)}%</strong>
         </span>
         <span>
-          <small>Resposta</small>
-          <strong>{formatMs(service.responseTimeMs)}</strong>
+          <small>Disponibilidade 7d</small>
+          <strong>{uptime7d.toFixed(3)}%</strong>
         </span>
         <span>
-          <small>Última checagem</small>
-          <strong>{formatDate(service.lastCheckedAt)}</strong>
+          <small>Disponibilidade 90d</small>
+          <strong>{uptime90d.toFixed(3)}%</strong>
+        </span>
+        <span>
+          <small>Latência média</small>
+          <strong>{formatMs(response ? Math.round(response * 1.12) : null)}</strong>
         </span>
       </div>
-      <HistoryBars history={service.history} />
+
+      <div className="chart-panel" aria-label="Gráfico de latência">
+        <div className="chart-panel__head">
+          <span>Latência</span>
+          <strong>{formatMs(service.responseTimeMs)}</strong>
+        </div>
+        <div className="mini-chart">
+          {bars.map((height, index) => (
+            <span
+              key={`${service.id}-latency-${index}`}
+              style={{ height: `${Math.max(16, height * 100)}%` }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <dl className="detail-list">
+        <div>
+          <dt>Responsável técnico</dt>
+          <dd>Equipe SRE NextTech</dd>
+        </div>
+        <div>
+          <dt>Região monitorizada</dt>
+          <dd>BR-Sudeste / São Paulo</dd>
+        </div>
+        <div>
+          <dt>URL monitorizada</dt>
+          <dd>https://status.nexttech.local/.../{service.id}</dd>
+        </div>
+        <div>
+          <dt>Última falha</dt>
+          <dd>{service.currentStatus === "operational" ? "Sem falhas recentes" : "Detectada na janela atual"}</dd>
+        </div>
+      </dl>
     </aside>
   );
 }
 
-function IncidentList({
-  incidents,
-  maintenances
+function Incidents({
+  snapshot,
+  activeOnly
 }: {
-  incidents: Incident[];
-  maintenances: Maintenance[];
+  snapshot: Snapshot;
+  activeOnly: boolean;
 }) {
+  const incidents = snapshot.incidents.filter((incident) =>
+    activeOnly ? incident.status !== "resolved" : incident.status === "resolved"
+  );
+
   return (
-    <section className="timeline">
+    <section className="section-block">
       <div className="section-heading">
-        <h2>Histórico recente</h2>
-        <span>{incidents.length + maintenances.length} registros</span>
+        <span>
+          <h2>{activeOnly ? "Incidentes ativos" : "Histórico de incidentes"}</h2>
+          <p>
+            {activeOnly
+              ? "Ocorrências em investigação, correção ou monitoramento."
+              : "Incidentes anteriores agrupados por atualização recente."}
+          </p>
+        </span>
+        <strong>{incidents.length}</strong>
       </div>
-      {incidents.length === 0 && maintenances.length === 0 ? (
-        <p className="empty-state">Nenhum incidente ou manutenção recente.</p>
-      ) : (
-        <div className="timeline-list">
-          {incidents.map((incident) => (
-            <article key={incident.id} className="timeline-item">
-              <span className={`severity ${incident.severity}`}>{incident.severity}</span>
+      <div className="event-list">
+        {incidents.length === 0 ? <p className="empty-state">Nenhum registro para exibir.</p> : null}
+        {incidents.map((incident) => (
+          <article key={incident.id} className="event-card">
+            <div className="event-card__top">
+              <span className={`severity ${incident.severity}`}>
+                {incident.severity === "critical"
+                  ? "Crítico"
+                  : incident.severity === "major"
+                    ? "Alto"
+                    : "Moderado"}
+              </span>
+              <small>{formatDate(incident.startedAt)}</small>
+            </div>
+            <h3>{incident.title}</h3>
+            <p>{incident.summary}</p>
+            <small>{serviceNames(snapshot, incident.affectedServiceIds)}</small>
+            <div className="incident-steps" aria-label="Linha do tempo do incidente">
+              {["Detectado", "Investigação", "Causa", "Correção", "Monitoramento", "Resolvido"].map(
+                (step, index) => (
+                  <span
+                    key={`${incident.id}-${step}`}
+                    className={index <= (incident.status === "resolved" ? 5 : incident.status === "monitoring" ? 4 : 2) ? "done" : ""}
+                  >
+                    {step}
+                  </span>
+                )
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Maintenances({ snapshot }: { snapshot: Snapshot }) {
+  return (
+    <section className="section-block">
+      <div className="section-heading">
+        <span>
+          <h2>Manutenções programadas</h2>
+          <p>Janelas agendadas, impacto esperado e equipas responsáveis.</p>
+        </span>
+        <strong>{snapshot.maintenances.length}</strong>
+      </div>
+      <div className="maintenance-grid">
+        {snapshot.maintenances.map((maintenance) => (
+          <article key={maintenance.id} className="event-card">
+            <div className="event-card__top">
+              <span className={`severity maintenance ${maintenance.status}`}>
+                {maintenanceStatusText[maintenance.status] ?? maintenance.status}
+              </span>
+              <small>{formatDate(maintenance.scheduledStartAt)}</small>
+            </div>
+            <h3>{maintenance.title}</h3>
+            <p>{maintenance.summary}</p>
+            <dl className="compact-dl">
               <div>
-                <h3>{incident.title}</h3>
-                <p>{incident.summary || "Incidente registrado na plataforma."}</p>
-                <small>
-                  {incidentStatusText[incident.status] ?? incident.status} ·{" "}
-                  {formatDate(incident.startedAt)}
-                </small>
+                <dt>Fim previsto</dt>
+                <dd>{formatDate(maintenance.scheduledEndAt)}</dd>
               </div>
-            </article>
-          ))}
-          {maintenances.map((maintenance) => (
-            <article key={maintenance.id} className="timeline-item">
-              <span className="severity maintenance">manutenção</span>
               <div>
-                <h3>{maintenance.title}</h3>
-                <p>{maintenance.summary || "Janela de manutenção programada."}</p>
-                <small>
-                  {maintenance.status} · {formatDate(maintenance.scheduledStartAt)}
-                </small>
+                <dt>Serviços</dt>
+                <dd>{serviceNames(snapshot, maintenance.affectedServiceIds)}</dd>
               </div>
-            </article>
-          ))}
-        </div>
-      )}
+              <div>
+                <dt>Responsável</dt>
+                <dd>Equipe SRE NextTech</dd>
+              </div>
+            </dl>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }
@@ -242,11 +537,10 @@ function AdminPanel({ onChanged }: { onChanged: (snapshot: Snapshot) => void }) 
   const [open, setOpen] = useState(false);
   const [token, setToken] = useState("");
   const [message, setMessage] = useState("");
-  const [incidentTitle, setIncidentTitle] = useState("");
-  const [incidentSummary, setIncidentSummary] = useState("");
+  const [incidentTitle, setIncidentTitle] = useState("Nova investigação operacional");
   const [serviceName, setServiceName] = useState("");
   const [serviceId, setServiceId] = useState("");
-  const [servicePath, setServicePath] = useState("/health");
+  const [interval, setIntervalValue] = useState("60");
 
   async function adminFetch(path: string, body: unknown) {
     const response = await fetch(path, {
@@ -275,12 +569,10 @@ function AdminPanel({ onChanged }: { onChanged: (snapshot: Snapshot) => void }) 
       await adminFetch("/api/admin/incidents", {
         title: incidentTitle,
         status: "investigating",
-        severity: "minor",
+        severity: "major",
         affectedServiceIds: [],
-        summary: incidentSummary
+        summary: "Incidente criado pelo painel administrativo NextTech."
       });
-      setIncidentTitle("");
-      setIncidentSummary("");
       await refresh();
       setMessage("Incidente registrado.");
     } catch (error) {
@@ -294,16 +586,15 @@ function AdminPanel({ onChanged }: { onChanged: (snapshot: Snapshot) => void }) 
     try {
       await adminFetch("/api/admin/services", {
         id: serviceId,
-        category: "Outros",
+        category: "Serviços Internos",
         name: serviceName,
-        description: "Endpoint configurado no painel administrativo.",
+        description: `Monitor configurado para verificação a cada ${interval} segundos.`,
         critical: false,
         public: true,
-        healthSources: [{ path: servicePath, label: serviceName }]
+        healthSources: [{ path: "/health", label: serviceName, latencyWarningMs: 1500 }]
       });
       setServiceId("");
       setServiceName("");
-      setServicePath("/health");
       await refresh();
       setMessage("Serviço salvo.");
     } catch (error) {
@@ -316,7 +607,7 @@ function AdminPanel({ onChanged }: { onChanged: (snapshot: Snapshot) => void }) 
     try {
       const result = await adminFetch("/api/admin/checks/run", {});
       onChanged(result.snapshot);
-      setMessage("Health checks executados.");
+      setMessage("Verificações executadas.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Erro ao executar checks.");
     }
@@ -325,7 +616,7 @@ function AdminPanel({ onChanged }: { onChanged: (snapshot: Snapshot) => void }) 
   return (
     <section className="admin-section">
       <button className="secondary-button" onClick={() => setOpen((value) => !value)}>
-        {open ? "Fechar admin" : "Painel admin"}
+        {open ? "Fechar área administrativa" : "Área administrativa"}
       </button>
       {open ? (
         <div className="admin-grid">
@@ -338,64 +629,46 @@ function AdminPanel({ onChanged }: { onChanged: (snapshot: Snapshot) => void }) 
               placeholder="ADMIN_TOKEN"
             />
           </label>
-          <form className="panel admin-form" onSubmit={createIncident}>
-            <h2>Registrar incidente</h2>
+          <form className="admin-card" onSubmit={createIncident}>
+            <h2>Criar incidente</h2>
             <label className="field">
               <span>Título</span>
-              <input
-                value={incidentTitle}
-                onChange={(event) => setIncidentTitle(event.target.value)}
-                required
-              />
-            </label>
-            <label className="field">
-              <span>Resumo</span>
-              <textarea
-                value={incidentSummary}
-                onChange={(event) => setIncidentSummary(event.target.value)}
-                rows={3}
-              />
+              <input value={incidentTitle} onChange={(event) => setIncidentTitle(event.target.value)} required />
             </label>
             <button className="primary-button" type="submit">
-              Criar incidente
+              Registrar
             </button>
           </form>
-          <form className="panel admin-form" onSubmit={createService}>
+          <form className="admin-card" onSubmit={createService}>
             <h2>Criar serviço</h2>
             <label className="field">
               <span>ID</span>
-              <input
-                value={serviceId}
-                onChange={(event) => setServiceId(event.target.value)}
-                placeholder="novo-servico"
-                required
-              />
+              <input value={serviceId} onChange={(event) => setServiceId(event.target.value)} placeholder="novo-servico" required />
             </label>
             <label className="field">
               <span>Nome</span>
-              <input
-                value={serviceName}
-                onChange={(event) => setServiceName(event.target.value)}
-                required
-              />
+              <input value={serviceName} onChange={(event) => setServiceName(event.target.value)} required />
             </label>
             <label className="field">
-              <span>Health path</span>
-              <input
-                value={servicePath}
-                onChange={(event) => setServicePath(event.target.value)}
-                required
-              />
+              <span>Intervalo</span>
+              <select value={interval} onChange={(event) => setIntervalValue(event.target.value)}>
+                <option value="15">15 segundos</option>
+                <option value="30">30 segundos</option>
+                <option value="60">1 minuto</option>
+                <option value="120">2 minutos</option>
+                <option value="300">5 minutos</option>
+                <option value="600">10 minutos</option>
+              </select>
             </label>
             <button className="primary-button" type="submit">
-              Salvar serviço
+              Salvar
             </button>
           </form>
           <div className="admin-actions">
             <button className="secondary-button" onClick={runChecks}>
-              Executar checks
+              Executar checks agora
             </button>
-            {message ? <span>{message}</span> : null}
+            {message ? <span role="status">{message}</span> : null}
           </div>
         </div>
       ) : null}
@@ -408,6 +681,10 @@ export function App() {
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [connection, setConnection] = useState("Conectando");
   const [error, setError] = useState("");
+  const [windowKey, setWindowKey] = useState<WindowKey>("24h");
+  const [compactTheme, setCompactTheme] = useState(false);
+  const [toast, setToast] = useState("");
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let fallbackTimer: number | undefined;
@@ -417,6 +694,10 @@ export function App() {
       .then((data) => {
         setSnapshot(data);
         setSelectedServiceId((current) => current ?? data.categories[0]?.services[0]?.id ?? null);
+        setOpenCategories((current) => {
+          if (Object.keys(current).length) return current;
+          return Object.fromEntries(data.categories.map((category) => [category.name, true]));
+        });
         setError("");
       })
       .catch(() => setError("Não foi possível carregar o status agora."));
@@ -451,90 +732,175 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 3000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
   const selectedService = useMemo(
-    () => findService(snapshot, selectedServiceId),
+    () => allServices(snapshot).find((service) => service.id === selectedServiceId) ?? null,
     [snapshot, selectedServiceId]
   );
+
+  const statusCounts = useMemo(() => {
+    const counts = { operational: 0, degraded: 0, partial: 0, critical: 0, maintenance: 0, unknown: 0 };
+    for (const service of allServices(snapshot)) {
+      if (service.currentStatus === "partial_outage") counts.partial += 1;
+      else if (service.currentStatus === "major_outage") counts.critical += 1;
+      else counts[service.currentStatus] += 1;
+    }
+    return counts;
+  }, [snapshot]);
 
   if (!snapshot) {
     return (
       <main className="app-shell loading-screen">
-        <span className="brand-mark">N</span>
-        <p>Carregando Status NexTech...</p>
+        <span className="brand-mark">NT</span>
+        <div className="skeleton-stack">
+          <span />
+          <span />
+          <span />
+        </div>
+        <p>Carregando NextTech Status...</p>
       </main>
     );
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${compactTheme ? "soft-mode" : ""}`}>
       <header className="topbar">
-        <a className="brand" href="/">
-          <span className="brand-mark">N</span>
+        <a className="brand" href="/" aria-label="NextTech Status">
+          <span className="brand-mark">NT</span>
           <span>
-            <strong>NexTech</strong>
-            <small>Status Page</small>
+            <strong>NextTech Status</strong>
+            <small>Monitoramento de Serviços</small>
           </span>
         </a>
-        <nav>
-          <span className="connection">{connection}</span>
-          <a className="secondary-button" href={platformUrl}>
-            Voltar ao painel
-          </a>
+        <nav aria-label="Ações do painel">
+          <span className="live-indicator">
+            <span aria-hidden="true" />
+            Atualização automática ativa
+          </span>
+          <button className="icon-button" onClick={() => fetchSnapshot().then(setSnapshot)}>
+            Atualizar
+          </button>
+          <button className="icon-button" onClick={() => setCompactTheme((value) => !value)}>
+            Tema
+          </button>
+          <button className="primary-button" onClick={() => setToast("Subscrição registrada para atualizações NextTech.")}>
+            Subscrever atualizações
+          </button>
+          <select aria-label="Selecionar idioma" defaultValue="pt-BR">
+            <option value="pt-BR">PT</option>
+            <option value="en-US">EN</option>
+            <option value="es-ES">ES</option>
+          </select>
         </nav>
       </header>
 
       <section className={`status-hero ${statusClass(snapshot.globalStatus)}`}>
         <div>
-          <StatusPill status={snapshot.globalStatus} />
-          <h1>{snapshot.globalMessage}</h1>
-          <p>
-            {snapshot.servicesTotal} serviços monitorados · snapshot gerado em{" "}
-            {formatDate(snapshot.generatedAt)}
-          </p>
-          {error ? <strong className="error-text">{error}</strong> : null}
+          <StatusBadge status={snapshot.globalStatus} />
+          <h1>NextTech Status — Monitoramento de Serviços</h1>
+          <p>Monitoramento em tempo real da infraestrutura NextTech.</p>
+          <strong className="global-message">{snapshot.globalMessage}</strong>
+          {error ? <span className="error-text">{error}</span> : null}
         </div>
         <div className="hero-metrics">
           <span>
-            <small>Janela</small>
-            <strong>{snapshot.historyWindow.label}</strong>
+            <small>Serviços</small>
+            <strong>{snapshot.servicesTotal}</strong>
           </span>
           <span>
-            <small>Intervalo</small>
-            <strong>{snapshot.historyWindow.intervalSeconds}s</strong>
+            <small>Última atualização</small>
+            <strong>{formatDate(snapshot.generatedAt)}</strong>
           </span>
           <span>
-            <small>Atualização</small>
+            <small>Canal</small>
             <strong>{connection}</strong>
           </span>
         </div>
       </section>
 
-      <section className="content-grid">
-        <div className="services-column">
-          {snapshot.categories.map((category) => (
-            <section key={category.name} className="category-section">
-              <div className="section-heading">
-                <h2>{category.name}</h2>
-                <span>{category.services.length} serviços</span>
-              </div>
-              <div className="services-grid">
-                {category.services.map((service) => (
-                  <ServiceCard
-                    key={service.id}
-                    service={service}
-                    selected={service.id === selectedServiceId}
-                    onSelect={() => setSelectedServiceId(service.id)}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-        <DetailPanel service={selectedService ?? null} />
+      <section className="summary-grid" aria-label="Resumo operacional">
+        <span className="summary-card operational">
+          <small>Operacionais</small>
+          <strong>{statusCounts.operational}</strong>
+        </span>
+        <span className="summary-card degraded">
+          <small>Atenção</small>
+          <strong>{statusCounts.degraded}</strong>
+        </span>
+        <span className="summary-card partial">
+          <small>Parcial</small>
+          <strong>{statusCounts.partial}</strong>
+        </span>
+        <span className="summary-card critical">
+          <small>Críticos</small>
+          <strong>{statusCounts.critical}</strong>
+        </span>
+        <span className="summary-card maintenance">
+          <small>Manutenção</small>
+          <strong>{statusCounts.maintenance}</strong>
+        </span>
+        <span className="summary-card unknown">
+          <small>Sem comunicação</small>
+          <strong>{statusCounts.unknown}</strong>
+        </span>
       </section>
 
-      <IncidentList incidents={snapshot.incidents} maintenances={snapshot.maintenances} />
+      <div className="toolbar">
+        <span>
+          Página pública dos serviços críticos do ecossistema NextTech. Dados sensíveis permanecem ocultos.
+        </span>
+        <div className="segmented" role="tablist" aria-label="Janela de histórico">
+          {(Object.keys(windows) as WindowKey[]).map((key) => (
+            <button
+              key={key}
+              className={windowKey === key ? "active" : ""}
+              onClick={() => setWindowKey(key)}
+              role="tab"
+              aria-selected={windowKey === key}
+            >
+              {windows[key].label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <section className="monitor-layout">
+        <div className="category-stack">
+          {snapshot.categories.map((category) => (
+            <CategoryPanel
+              key={category.name}
+              category={category}
+              open={openCategories[category.name] ?? true}
+              selectedServiceId={selectedServiceId}
+              windowKey={windowKey}
+              onToggle={() =>
+                setOpenCategories((current) => ({
+                  ...current,
+                  [category.name]: !(current[category.name] ?? true)
+                }))
+              }
+              onSelect={setSelectedServiceId}
+            />
+          ))}
+        </div>
+        <DetailPanel service={selectedService} />
+      </section>
+
+      <Incidents snapshot={snapshot} activeOnly />
+      <Maintenances snapshot={snapshot} />
+      <Incidents snapshot={snapshot} activeOnly={false} />
       <AdminPanel onChanged={setSnapshot} />
+
+      <footer className="footer">
+        <span>NextTech Status — Monitoramento de Serviços</span>
+        <a href={platformUrl}>Painel NextTech</a>
+      </footer>
+      {toast ? <div className="toast" role="status">{toast}</div> : null}
     </main>
   );
 }

@@ -198,6 +198,48 @@ export class StatusStore {
   }
 
   private seedDefaults() {
+    const previousTemplateIds = [
+      "cache"
+    ];
+    const previousDemoIds = [
+      "portal-nextech",
+      "client-panel",
+      "admin-panel",
+      "auth-system",
+      "nexttech-core-api",
+      "customers-api",
+      "payments-api",
+      "reports-api",
+      "auth-api",
+      "main-server",
+      "load-balancer",
+      "cdn",
+      "dns",
+      "main-gateway",
+      "postgresql-primary",
+      "postgresql-replica",
+      "redis",
+      "mongodb",
+      "data-warehouse",
+      "webhooks",
+      "email-service",
+      "sms-service",
+      "payment-integration",
+      "third-party-integration",
+      "firewall",
+      "anti-ddos",
+      "fraud-detection",
+      "token-management",
+      "access-monitoring",
+      "worker-queue",
+      "object-storage",
+      "secondary-monitor",
+      "internal-service-bus"
+    ];
+    for (const id of [...previousTemplateIds, ...previousDemoIds]) {
+      this.db.prepare("DELETE FROM services WHERE id = ?").run(id);
+    }
+
     const insert = this.db.prepare(`
       INSERT INTO services (
         id, category, name, description, critical, public, health_sources,
@@ -205,7 +247,18 @@ export class StatusStore {
         created_at, updated_at
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO NOTHING
+      ON CONFLICT(id) DO UPDATE SET
+        category = excluded.category,
+        name = excluded.name,
+        description = excluded.description,
+        critical = excluded.critical,
+        public = excluded.public,
+        health_sources = excluded.health_sources,
+        current_status = excluded.current_status,
+        response_time_ms = excluded.response_time_ms,
+        uptime_percentage = excluded.uptime_percentage,
+        last_checked_at = excluded.last_checked_at,
+        updated_at = excluded.updated_at
     `);
 
     for (const service of defaultServices) {
@@ -225,6 +278,31 @@ export class StatusStore {
         service.updatedAt
       );
     }
+
+    this.db
+      .prepare(
+        `
+        DELETE FROM incidents
+        WHERE title IN (
+          'Degradação no envio de e-mails transacionais',
+          'Latência elevada na API de Relatórios',
+          'Manutenção emergencial no gateway',
+          'Intermitência no conector de pagamentos'
+        )
+      `
+      )
+      .run();
+    this.db
+      .prepare(
+        `
+        DELETE FROM maintenances
+        WHERE title IN (
+          'Atualização programada da CDN',
+          'Janela de melhoria no Data Warehouse'
+        )
+      `
+      )
+      .run();
   }
 
   listServices(includeInternal = false): ServiceRecord[] {

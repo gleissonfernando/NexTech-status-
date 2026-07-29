@@ -10,6 +10,15 @@ type HealthResult = {
   shouldHideService?: boolean;
 };
 
+const publicStatusValues = new Set<PublicStatus>([
+  "operational",
+  "degraded",
+  "partial_outage",
+  "major_outage",
+  "maintenance",
+  "unknown"
+]);
+
 const badStatusValues = new Set([
   "error",
   "down",
@@ -45,6 +54,79 @@ function normalizeStatusValue(value: unknown) {
   return typeof value === "string" ? value.toLowerCase().trim() : "";
 }
 
+function isPublicStatus(value: unknown): value is PublicStatus {
+  return typeof value === "string" && publicStatusValues.has(value as PublicStatus);
+}
+
+function findRemoteStatusService(payload: unknown, serviceId: string): Record<string, unknown> | null {
+  if (!isRecord(payload)) return null;
+  const categories = payload.categories;
+  if (!Array.isArray(categories)) return null;
+
+  for (const category of categories) {
+    if (!isRecord(category) || !Array.isArray(category.services)) continue;
+    for (const service of category.services) {
+      if (isRecord(service) && service.id === serviceId) return service;
+    }
+  }
+
+  return null;
+}
+
+function evaluateRemoteStatusApi(
+  service: ServiceRecord,
+  source: HealthSource,
+  httpStatus: number,
+  responseTimeMs: number,
+  payload: unknown
+): HealthResult | null {
+  if (source.path !== "/api/status") return null;
+
+  if (httpStatus >= 500) {
+    return {
+      currentStatus: service.critical ? "major_outage" : "partial_outage",
+      responseTimeMs,
+      details: { source: source.label, httpStatus, reason: "status_api_server_error" }
+    };
+  }
+
+  if (httpStatus < 200 || httpStatus >= 300) {
+    return {
+      currentStatus: "degraded",
+      responseTimeMs,
+      details: { source: source.label, httpStatus, reason: "status_api_unexpected_http_status" }
+    };
+  }
+
+  const remoteService = findRemoteStatusService(payload, service.id);
+  if (!remoteService) {
+    return {
+      currentStatus: "unknown",
+      responseTimeMs,
+      details: { source: source.label, httpStatus, reason: "service_not_found_in_status_api" }
+    };
+  }
+
+  const remoteStatus = remoteService.currentStatus;
+  const remoteResponseTime = remoteService.responseTimeMs;
+  const remoteUptime = remoteService.uptimePercentage;
+  return {
+    currentStatus: isPublicStatus(remoteStatus) ? remoteStatus : "unknown",
+    responseTimeMs:
+      typeof remoteResponseTime === "number" && Number.isFinite(remoteResponseTime)
+        ? Math.round(remoteResponseTime)
+        : responseTimeMs,
+    details: {
+      source: source.label,
+      httpStatus,
+      reason: "status_api_service_snapshot",
+      remoteGeneratedAt: isRecord(payload) ? payload.generatedAt : undefined,
+      remoteUptimePercentage:
+        typeof remoteUptime === "number" && Number.isFinite(remoteUptime) ? remoteUptime : undefined
+    }
+  };
+}
+
 function evaluatePayload(
   service: ServiceRecord,
   source: HealthSource,
@@ -52,6 +134,15 @@ function evaluatePayload(
   responseTimeMs: number,
   payload: unknown
 ): HealthResult {
+  const remoteStatusResult = evaluateRemoteStatusApi(
+    service,
+    source,
+    httpStatus,
+    responseTimeMs,
+    payload
+  );
+  if (remoteStatusResult) return remoteStatusResult;
+
   const configured = findScalar(payload, "configured");
   const enabled = findScalar(payload, "enabled");
   const ok = findScalar(payload, "ok");
@@ -124,6 +215,7 @@ function evaluatePayload(
 }
 
 function preferWorse(current: HealthResult, next: HealthResult): HealthResult {
+  if (current.details.reason === "no_health_source") return next;
   const rank: Record<PublicStatus, number> = {
     major_outage: 5,
     partial_outage: 4,
