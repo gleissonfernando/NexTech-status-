@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type PublicStatus =
   | "operational"
@@ -251,7 +251,7 @@ function visualHistory(service: Service, windowKey: WindowKey) {
   return Array.from({ length: desired }, () => status);
 }
 
-function incidentText(service: Service, previous?: PublicStatus) {
+function incidentText(service: Service) {
   if (service.currentStatus === "operational") {
     return {
       title: `${service.name} voltou ao normal`,
@@ -288,30 +288,33 @@ function incidentText(service: Service, previous?: PublicStatus) {
   return {
     title: `${service.name} desligado ou sem comunicação`,
     summary:
-      previous
-        ? "O monitor não recebeu marcação válida do serviço. As barras ficam vazias enquanto ele estiver desligado ou sem comunicação."
-        : "O serviço iniciou sem comunicação. As barras ficam vazias enquanto ele estiver desligado."
+      "O monitor não recebeu marcação válida do serviço. As barras ficam vazias enquanto ele estiver desligado ou sem comunicação."
   };
 }
 
-function collectLiveIncidents(previous: Snapshot | null, next: Snapshot) {
-  if (!previous) return [];
-  const previousServices = new Map(allServices(previous).map((service) => [service.id, service]));
+function collectActiveIncidents(next: Snapshot, current: LiveIncident[]) {
+  const currentByStatus = new Map(
+    current.map((incident) => [`${incident.serviceId}-${incident.status}`, incident])
+  );
   const createdAt = new Date().toISOString();
 
   return allServices(next)
-    .filter((service) => previousServices.get(service.id)?.currentStatus !== service.currentStatus)
+    .map((service) => ({
+      service,
+      status: normalizePublicStatus(service.currentStatus)
+    }))
+    .filter(({ status }) => status !== "operational")
     .map((service) => {
-      const previousStatus = previousServices.get(service.id)?.currentStatus;
-      const text = incidentText(service, previousStatus);
+      const text = incidentText(service.service);
+      const existing = currentByStatus.get(`${service.service.id}-${service.status}`);
       return {
-        id: `${service.id}-${service.currentStatus}-${createdAt}`,
-        serviceId: service.id,
-        serviceName: service.name,
-        status: service.currentStatus,
+        id: `${service.service.id}-${service.status}`,
+        serviceId: service.service.id,
+        serviceName: service.service.name,
+        status: service.status,
         title: text.title,
         summary: text.summary,
-        createdAt
+        createdAt: existing?.createdAt ?? createdAt
       };
     });
 }
@@ -377,7 +380,7 @@ function LiveIncidentFeed({ incidents }: { incidents: LiveIncident[] }) {
 
   return (
     <section className="past-incidents">
-      <h2>Past Incidents</h2>
+      <h2>Incidentes em tempo real</h2>
       <div className="past-incidents__date">
         {new Intl.DateTimeFormat("pt-BR", { dateStyle: "long" }).format(
           new Date(incidents[0].createdAt)
@@ -805,21 +808,14 @@ export function App() {
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
   const [adminEnabled] = useState(() => window.location.hash === "#admin");
   const [liveIncidents, setLiveIncidents] = useState<LiveIncident[]>([]);
-  const previousSnapshotRef = useRef<Snapshot | null>(null);
 
   useEffect(() => {
     let fallbackTimer: number | undefined;
     let eventSource: EventSource | null = null;
 
-    function applySnapshot(data: Snapshot, collectEvents: boolean) {
-      if (collectEvents) {
-        const nextIncidents = collectLiveIncidents(previousSnapshotRef.current, data);
-        if (nextIncidents.length) {
-          setLiveIncidents((current) => [...nextIncidents, ...current].slice(0, 12));
-        }
-      }
-      previousSnapshotRef.current = data;
+    function applySnapshot(data: Snapshot) {
       setSnapshot(data);
+      setLiveIncidents((current) => collectActiveIncidents(data, current));
       setOpenCategories((current) => {
         if (Object.keys(current).length) return current;
         return Object.fromEntries(data.categories.map((category) => [category.name, true]));
@@ -828,14 +824,14 @@ export function App() {
     }
 
     fetchSnapshot()
-      .then((data) => applySnapshot(data, false))
+      .then((data) => applySnapshot(data))
       .catch(() => setError("Não foi possível carregar o status agora."));
 
     try {
       eventSource = new EventSource("/api/public/status/events");
       eventSource.addEventListener("status-update", (event) => {
         const data = JSON.parse((event as MessageEvent).data) as Snapshot;
-        applySnapshot(data, true);
+        applySnapshot(data);
         setConnection("Tempo real");
       });
       eventSource.onerror = () => {
@@ -843,7 +839,7 @@ export function App() {
         if (!fallbackTimer) {
           fallbackTimer = window.setInterval(() => {
             fetchSnapshot()
-              .then((data) => applySnapshot(data, true))
+              .then((data) => applySnapshot(data))
               .catch(() => setError("Fallback sem resposta."));
           }, 10000);
         }
@@ -852,7 +848,7 @@ export function App() {
       setConnection("Fallback 10s");
       fallbackTimer = window.setInterval(() => {
         fetchSnapshot()
-          .then((data) => applySnapshot(data, true))
+          .then((data) => applySnapshot(data))
           .catch(() => setError("Fallback sem resposta."));
       }, 10000);
     }
