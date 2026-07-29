@@ -16,7 +16,7 @@ const envSchema = z.object({
   ADMIN_TOKEN: z.string().min(16).default("change-this-admin-token"),
   INGEST_TOKEN: z.string().min(16).optional(),
   DATABASE_PATH: z.string().default("./data/status.sqlite"),
-  DEFAULT_CHECK_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(60),
+  DEFAULT_CHECK_INTERVAL_SECONDS: z.coerce.number().int().min(5).default(5),
   DEFAULT_TIMEOUT_MS: z.coerce.number().int().min(500).default(5000),
   HISTORY_RETENTION_HOURS: z.coerce.number().int().min(1).default(72),
   ENABLE_MONITORING: z

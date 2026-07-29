@@ -273,7 +273,7 @@ export class Monitor {
     void this.runOnce();
     this.timer = setInterval(
       () => void this.runOnce(),
-      this.config.DEFAULT_CHECK_INTERVAL_SECONDS * 1000
+      Math.min(this.config.DEFAULT_CHECK_INTERVAL_SECONDS, 5) * 1000
     );
     this.timer.unref();
   }
@@ -286,11 +286,9 @@ export class Monitor {
   async runOnce() {
     if (this.running) return;
     this.running = true;
-    let changed = false;
     try {
       const services = this.store.listServices(true);
       for (const service of services) {
-        const previousStatus = service.currentStatus;
         let result: HealthResult = {
           currentStatus: "unknown",
           responseTimeMs: null,
@@ -314,13 +312,12 @@ export class Monitor {
           details: result.details
         });
 
-        changed = changed || previousStatus !== result.currentStatus;
       }
       this.store.pruneChecks(this.config.HISTORY_RETENTION_HOURS);
     } finally {
       this.running = false;
     }
 
-    if (changed) this.onChange();
+    this.onChange();
   }
 }
