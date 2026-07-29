@@ -144,25 +144,58 @@ const maintenanceStatusText: Record<string, string> = {
   canceled: "Cancelada"
 };
 
+const publicStatusValues: PublicStatus[] = [
+  "operational",
+  "degraded",
+  "partial_outage",
+  "major_outage",
+  "maintenance",
+  "unknown"
+];
+
+const globalStatusValues: Snapshot["globalStatus"][] = ["operational", "degraded", "major_outage"];
+
+function normalizePublicStatus(value: unknown): PublicStatus {
+  return publicStatusValues.includes(value as PublicStatus) ? (value as PublicStatus) : "unknown";
+}
+
+function normalizeGlobalStatus(value: unknown): Snapshot["globalStatus"] {
+  return globalStatusValues.includes(value as Snapshot["globalStatus"])
+    ? (value as Snapshot["globalStatus"])
+    : "degraded";
+}
+
+function safeNumber(value: unknown, fallback = 0) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function safeUptime(service: Service) {
+  return Math.max(0, Math.min(100, safeNumber(service.uptimePercentage)));
+}
+
 function formatDate(value: string | null) {
   if (!value) return "Sem verificação";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Sem verificação";
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short"
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function formatTime(value: string | null) {
   if (!value) return "sem dados";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "sem dados";
   return new Intl.DateTimeFormat("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit"
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function formatMs(value: number | null) {
-  return value === null ? "Sem dados" : `${value} ms`;
+  return value === null || !Number.isFinite(value) ? "Sem dados" : `${Math.round(value)} ms`;
 }
 
 function statusClass(status: PublicStatus | Snapshot["globalStatus"] | HistoryStatus) {
@@ -204,10 +237,11 @@ function normalizeHistory(history: HistoryStatus[], windowKey: WindowKey) {
 }
 
 function serviceStatusToHistory(status: PublicStatus): HistoryStatus {
-  if (status === "operational") return "operational";
-  if (status === "degraded") return "degraded";
-  if (status === "maintenance") return "maintenance";
-  if (status === "unknown") return "no_data";
+  const safeStatus = normalizePublicStatus(status);
+  if (safeStatus === "operational") return "operational";
+  if (safeStatus === "degraded") return "degraded";
+  if (safeStatus === "maintenance") return "maintenance";
+  if (safeStatus === "unknown") return "no_data";
   return "down";
 }
 
@@ -283,10 +317,11 @@ function collectLiveIncidents(previous: Snapshot | null, next: Snapshot) {
 }
 
 function StatusBadge({ status }: { status: PublicStatus | Snapshot["globalStatus"] }) {
-  const meta = statusMeta[status];
+  const safeStatus = statusMeta[status] ? status : "unknown";
+  const meta = statusMeta[safeStatus];
   return (
     <span
-      className={`status-badge ${statusClass(status)}`}
+      className={`status-badge ${statusClass(safeStatus)}`}
       title={meta.hint}
       aria-label={`Status: ${meta.label}. ${meta.hint}`}
     >
@@ -374,11 +409,14 @@ function ServiceRow({
   windowKey: WindowKey;
   onSelect: () => void;
 }) {
+  const uptime = safeUptime(service);
+  const currentStatus = normalizePublicStatus(service.currentStatus);
+
   return (
     <article className={`service-row ${selected ? "selected" : ""}`}>
       <button className="service-row__main" onClick={onSelect} aria-pressed={selected}>
-        <span className={`uptime-chip ${statusClass(service.currentStatus)}`}>
-          {service.currentStatus === "unknown" ? "0%" : `${service.uptimePercentage.toFixed(2)}%`}
+        <span className={`uptime-chip ${statusClass(currentStatus)}`}>
+          {currentStatus === "unknown" ? "0%" : `${uptime.toFixed(2)}%`}
         </span>
         <span className="service-name">
           <strong>{service.name}</strong>
@@ -434,9 +472,10 @@ function CategoryPanel({
 function DetailPanel({ service, onClose }: { service: Service | null; onClose: () => void }) {
   if (!service) return null;
 
-  const uptime7d = Math.min(100, service.uptimePercentage + 0.018);
-  const uptime90d = Math.max(0, service.uptimePercentage - 0.24);
-  const response = service.responseTimeMs ?? 0;
+  const uptime = safeUptime(service);
+  const uptime7d = Math.min(100, uptime + 0.018);
+  const uptime90d = Math.max(0, uptime - 0.24);
+  const response = safeNumber(service.responseTimeMs);
   const bars = [0.7, 0.9, 0.62, 0.78, 0.56, 0.82, 0.68, 0.74, 0.58, 0.86, 0.7, 0.64];
 
   return (
@@ -455,7 +494,7 @@ function DetailPanel({ service, onClose }: { service: Service | null; onClose: (
       <div className="metric-grid">
         <span>
           <small>Disponibilidade 24h</small>
-          <strong>{service.uptimePercentage.toFixed(3)}%</strong>
+          <strong>{uptime.toFixed(3)}%</strong>
         </span>
         <span>
           <small>Disponibilidade 7d</small>
@@ -824,12 +863,6 @@ export function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
   const selectedService = useMemo(
     () => allServices(snapshot).find((service) => service.id === selectedServiceId) ?? null,
     [snapshot, selectedServiceId]
@@ -860,8 +893,8 @@ export function App() {
         </a>
       </header>
 
-      <section className={`status-hero ${statusClass(snapshot.globalStatus)}`}>
-        <StatusBadge status={snapshot.globalStatus} />
+      <section className={`status-hero ${statusClass(normalizeGlobalStatus(snapshot.globalStatus))}`}>
+        <StatusBadge status={normalizeGlobalStatus(snapshot.globalStatus)} />
         <strong>{snapshot.globalMessage}</strong>
         {error ? <span className="error-text">{error}</span> : null}
       </section>

@@ -13,6 +13,10 @@ class StatusErrorBoundary extends React.Component<
     return { failed: true };
   }
 
+  componentDidCatch(error: unknown) {
+    console.error("Falha ao renderizar o painel de status", error);
+  }
+
   render() {
     if (this.state.failed) {
       return (
