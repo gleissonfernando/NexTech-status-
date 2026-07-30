@@ -46,6 +46,10 @@ function buildHistory(serviceId: string, checks: CheckRecord[]) {
   return buckets.map(worstHistoryStatus);
 }
 
+function currentStatusHistory(status: PublicStatus) {
+  return Array.from({ length: HISTORY_BARS }, () => toHistoryStatus(status));
+}
+
 function calculateGlobalStatus(services: ServiceSnapshot[], incidentsCount: number) {
   const visible = services.filter((service) => service.currentStatus !== "unknown");
   const criticalDown = visible.some(
@@ -93,18 +97,24 @@ export function buildSnapshot(store: StatusStore): StatusSnapshot {
     Date.now() - HISTORY_BARS * HISTORY_INTERVAL_SECONDS * 1000
   ).toISOString();
   const checks = store.getChecksSince(since);
-  const services = store.listServices(false).map<ServiceSnapshot>((service) => ({
-    id: service.id,
-    category: service.category,
-    name: service.name,
-    description: service.description,
-    critical: service.critical,
-    currentStatus: service.currentStatus,
-    responseTimeMs: service.responseTimeMs,
-    uptimePercentage: service.uptimePercentage,
-    lastCheckedAt: service.lastCheckedAt,
-    history: buildHistory(service.id, checks)
-  }));
+  const services = store.listServices(false).map<ServiceSnapshot>((service) => {
+    const currentStatus = service.currentStatus;
+
+    return {
+      id: service.id,
+      category: service.category,
+      name: service.name,
+      description: service.description,
+      critical: service.critical,
+      currentStatus,
+      responseTimeMs: service.responseTimeMs,
+      uptimePercentage: service.uptimePercentage,
+      lastCheckedAt: service.lastCheckedAt,
+      history: currentStatus === "operational"
+        ? currentStatusHistory(currentStatus)
+        : buildHistory(service.id, checks)
+    };
+  });
 
   const activeIncidents = store
     .listIncidents(20)
