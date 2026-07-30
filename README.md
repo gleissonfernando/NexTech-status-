@@ -22,8 +22,8 @@ Sistema independente de Status Page para monitorar serviços da NexTech com API 
 
 URLs públicas recomendadas depois do deploy:
 
-- `https://nextech.com/api/public/status`
-- `https://nextech.com/api/public/status/events`
+- `https://nextech-status.discloud.app/api/public/status`
+- `https://nextech-status.discloud.app/api/public/status/events`
 
 Aliases de compatibilidade:
 
@@ -55,7 +55,7 @@ Use esta rota quando o sistema principal precisar enviar dados para o Status ind
 URL de produção:
 
 ```text
-https://nextech.com/api/ingest/status
+https://nextech-status.discloud.app/api/ingest/status
 ```
 
 Headers:
@@ -87,7 +87,7 @@ Payload:
 Exemplo no site principal:
 
 ```js
-await fetch("https://nextech.com/api/ingest/status", {
+await fetch("https://nextech-status.discloud.app/api/ingest/status", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -157,7 +157,7 @@ npm run build
 npm start
 ```
 
-Em produção, sirva o processo Node atrás de um proxy reverso apontando para `PORT`. O domínio público deste deploy é `https://nextech.com`; mantenha `/api/public/status/*` acessível.
+Em produção, sirva o processo Node atrás de um proxy reverso apontando para `PORT`. O domínio público deste deploy é `https://nextech-status.discloud.app`; mantenha `/api/public/status/*` acessível.
 
 ## Deploy na Discloud
 
