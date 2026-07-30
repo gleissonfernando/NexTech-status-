@@ -110,7 +110,7 @@ export function buildSnapshot(store: StatusStore): StatusSnapshot {
       responseTimeMs: service.responseTimeMs,
       uptimePercentage: service.uptimePercentage,
       lastCheckedAt: service.lastCheckedAt,
-      history: currentStatus === "operational"
+      history: currentStatus === "operational" || currentStatus === "degraded"
         ? currentStatusHistory(currentStatus)
         : buildHistory(service.id, checks)
     };
