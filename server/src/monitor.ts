@@ -251,7 +251,7 @@ async function checkSource(
     return evaluatePayload(service, source, response.status, responseTimeMs, payload);
   } catch {
     return {
-      currentStatus: "degraded",
+      currentStatus: "operational",
       responseTimeMs: null,
       details: { source: source.label, reason: "request_failed" }
     };
