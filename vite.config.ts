@@ -7,9 +7,6 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      "import.meta.env.VITE_PUBLIC_STATUS_URL": JSON.stringify(
-        env.VITE_PUBLIC_STATUS_URL ?? env.PUBLIC_STATUS_URL ?? ""
-      ),
       "import.meta.env.VITE_PLATFORM_PANEL_URL": JSON.stringify(
         env.VITE_PLATFORM_PANEL_URL ?? env.PLATFORM_PANEL_URL ?? "https://nextech.discloud.app"
       )

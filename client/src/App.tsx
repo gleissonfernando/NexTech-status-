@@ -75,13 +75,7 @@ type LiveIncident = {
   createdAt: string;
 };
 
-const publicStatusUrl = (import.meta.env.VITE_PUBLIC_STATUS_URL ?? "").replace(/\/$/, "");
 const platformUrl = import.meta.env.VITE_PLATFORM_PANEL_URL ?? "https://nextech.discloud.app";
-const publicApiBases = Array.from(new Set(["", publicStatusUrl].filter(Boolean)));
-
-function publicApiPath(path: string, base = "") {
-  return `${base}${path}`;
-}
 
 const windows: Record<WindowKey, { label: string; bars: number }> = {
   "1h": { label: "1 hora", bars: 24 },
@@ -221,19 +215,12 @@ function latencyLevel(value: number | null) {
 }
 
 async function fetchSnapshot() {
-  let lastError: unknown;
-  for (const base of publicApiBases) {
-    try {
-      const response = await fetch(publicApiPath("/api/public/status", base), {
-        headers: { accept: "application/json" }
-      });
-      if (!response.ok) throw new Error("Falha ao buscar snapshot");
-      return (await response.json()) as Snapshot;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("Falha ao buscar snapshot");
+  const response = await fetch("/api/public/status", {
+    headers: { accept: "application/json" },
+    cache: "no-store"
+  });
+  if (!response.ok) throw new Error("Falha ao buscar snapshot");
+  return (await response.json()) as Snapshot;
 }
 
 function allServices(snapshot: Snapshot | null) {
