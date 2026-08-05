@@ -163,7 +163,7 @@ export function createApp(options?: {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
+          scriptSrc: ["'self'", "https://static.cloudflareinsights.com"],
           styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
           fontSrc: ["'self'", "https://fonts.gstatic.com"],
           imgSrc: ["'self'", "data:"],
@@ -173,14 +173,12 @@ export function createApp(options?: {
     })
   );
   app.use(
-    cors({
-      origin(origin, callback) {
-        if (!origin || config.corsOrigins.includes(origin)) {
-          callback(null, true);
-          return;
-        }
-        callback(new Error("Origin not allowed by CORS"));
-      }
+    cors((request, callback) => {
+      const origin = request.header("origin");
+      const selfOrigin = `${request.protocol}://${request.get("host")}`;
+      callback(null, {
+        origin: !origin || origin === selfOrigin || config.corsOrigins.includes(origin)
+      });
     })
   );
   app.use(
@@ -188,7 +186,8 @@ export function createApp(options?: {
       windowMs: config.RATE_LIMIT_WINDOW_MS,
       limit: config.RATE_LIMIT_MAX,
       standardHeaders: true,
-      legacyHeaders: false
+      legacyHeaders: false,
+      skip: (request) => !request.path.startsWith("/api") && request.path !== "/health"
     })
   );
   const sensitiveRateLimit = rateLimit({
