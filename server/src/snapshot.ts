@@ -6,6 +6,7 @@ import type {
   ServiceSnapshot,
   StatusSnapshot
 } from "./types.js";
+import { effectiveServiceStatus, isOfflineStatus } from "./statusRules.js";
 
 const HISTORY_BARS = 96;
 const HISTORY_INTERVAL_SECONDS = 900;
@@ -52,6 +53,13 @@ function currentStatusHistory(status: PublicStatus) {
 
 function calculateGlobalStatus(services: ServiceSnapshot[], incidentsCount: number) {
   const visible = services.filter((service) => service.currentStatus !== "unknown");
+  if (services.length > 0 && visible.length === 0) {
+    return {
+      globalStatus: "degraded" as const,
+      globalMessage: "Serviços da NexTech estão sem comunicação recente."
+    };
+  }
+
   const criticalDown = visible.some(
     (service) =>
       service.critical &&
@@ -97,8 +105,10 @@ export function buildSnapshot(store: StatusStore): StatusSnapshot {
     Date.now() - HISTORY_BARS * HISTORY_INTERVAL_SECONDS * 1000
   ).toISOString();
   const checks = store.getChecksSince(since);
+  const now = Date.now();
   const services = store.listServices(false).map<ServiceSnapshot>((service) => {
-    const currentStatus = service.currentStatus;
+    const currentStatus = effectiveServiceStatus(service, now);
+    const offline = isOfflineStatus(currentStatus);
 
     return {
       id: service.id,
@@ -107,10 +117,12 @@ export function buildSnapshot(store: StatusStore): StatusSnapshot {
       description: service.description,
       critical: service.critical,
       currentStatus,
-      responseTimeMs: service.responseTimeMs,
-      uptimePercentage: service.uptimePercentage,
+      responseTimeMs: offline ? null : service.responseTimeMs,
+      uptimePercentage: offline ? 0 : service.uptimePercentage,
       lastCheckedAt: service.lastCheckedAt,
-      history: currentStatus === "operational" || currentStatus === "degraded"
+      history: offline
+        ? currentStatusHistory("unknown")
+        : currentStatus === "operational" || currentStatus === "degraded"
         ? currentStatusHistory(currentStatus)
         : buildHistory(service.id, checks)
     };

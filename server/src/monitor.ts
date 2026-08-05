@@ -1,5 +1,6 @@
 import type { AppConfig } from "./config.js";
 import { statusToHistory } from "./snapshot.js";
+import { isOfflineStatus } from "./statusRules.js";
 import type { StatusStore } from "./store.js";
 import type { HealthSource, PublicStatus, ServiceRecord } from "./types.js";
 
@@ -251,11 +252,21 @@ async function checkSource(
     return evaluatePayload(service, source, response.status, responseTimeMs, payload);
   } catch {
     return {
-      currentStatus: "operational",
+      currentStatus: "unknown",
       responseTimeMs: null,
       details: { source: source.label, reason: "request_failed" }
     };
   }
+}
+
+function formatIncidentDuration(startedAt: string, endedAt = new Date().toISOString()) {
+  const start = new Date(startedAt).getTime();
+  const end = new Date(endedAt).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return "duração indisponível";
+  const totalSeconds = Math.round((end - start) / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}min ${seconds}s` : `${seconds}s`;
 }
 
 export class Monitor {
@@ -304,6 +315,8 @@ export class Monitor {
           this.store.setServiceVisibility(service.id, false);
         }
 
+        this.syncIncident(service, result);
+
         this.store.recordCheck({
           serviceId: service.id,
           currentStatus: result.currentStatus,
@@ -311,6 +324,9 @@ export class Monitor {
           responseTimeMs: result.responseTimeMs,
           details: result.details
         });
+        console.log(
+          `[STATUS] Atualização recebida service=${service.id} status=${result.currentStatus}`
+        );
 
       }
       this.store.pruneChecks(this.config.HISTORY_RETENTION_HOURS);
@@ -319,5 +335,59 @@ export class Monitor {
     }
 
     this.onChange();
+  }
+
+  private syncIncident(service: ServiceRecord, result: HealthResult) {
+    const previousOffline = isOfflineStatus(service.currentStatus);
+    const currentOffline = isOfflineStatus(result.currentStatus);
+    const activeIncident = this.store.getActiveIncidentForService(service.id);
+
+    if (currentOffline && !previousOffline && !activeIncident) {
+      const incident = this.store.createIncident({
+        title: `${service.name} indisponível`,
+        status: "investigating",
+        severity: service.critical ? "critical" : "major",
+        affectedServiceIds: [service.id],
+        summary: [
+          `Status: Offline`,
+          `Serviço: ${service.name}`,
+          `Identificador: ${service.id}`,
+          `Ambiente: Produção`,
+          `Última resposta: ${service.lastCheckedAt ?? "sem resposta válida"}`,
+          `Latência anterior: ${
+            service.responseTimeMs === null ? "indisponível" : `${service.responseTimeMs} ms`
+          }`,
+          `Motivo: ${String(result.details.reason ?? "sem comunicação")}`
+        ].join(" | ")
+      });
+      console.log(`[STATUS] Serviço marcado como offline service=${service.id}`);
+      console.log(`[STATUS] Incidente criado id=${incident.id} service=${service.id}`);
+      console.log(`[STATUS] Alerta de queda enviado id=${incident.id} service=${service.id}`);
+      return;
+    }
+
+    if (!currentOffline && activeIncident) {
+      const recoveredAt = new Date().toISOString();
+      this.store.patchIncident(activeIncident.id, {
+        status: "resolved",
+        resolvedAt: recoveredAt,
+        summary: `${activeIncident.summary} | Recuperado em: ${recoveredAt} | Duração: ${formatIncidentDuration(
+          activeIncident.startedAt,
+          recoveredAt
+        )} | Status atual: ${result.currentStatus} | Latência atual: ${
+          result.responseTimeMs === null ? "indisponível" : `${result.responseTimeMs} ms`
+        }`
+      });
+      console.log(`[STATUS] Serviço recuperado service=${service.id}`);
+      console.log(`[STATUS] Alerta de recuperação enviado id=${activeIncident.id} service=${service.id}`);
+      return;
+    }
+
+    if (!previousOffline && result.currentStatus === "operational") {
+      console.log(`[STATUS] Serviço alterado para operacional service=${service.id}`);
+    }
+    if (result.currentStatus === "major_outage") {
+      console.log(`[STATUS] Serviço alterado para crítico service=${service.id}`);
+    }
   }
 }

@@ -62,7 +62,8 @@ describe("NexTech Status API", () => {
   it("returns a public snapshot with default NexTech services", async () => {
     const response = await request(runtime!.app).get("/api/public/status").expect(200);
 
-    expect(response.body.globalStatus).toBe("operational");
+    expect(response.body.globalStatus).toBe("degraded");
+    expect(response.body.globalMessage).toContain("sem comunicação");
     expect(response.body.historyWindow).toEqual({
       bars: 96,
       intervalSeconds: 900,
@@ -203,6 +204,80 @@ describe("NexTech Status API", () => {
     expect(services.find((service: { id: string }) => service.id === "data-storage")).toMatchObject({
       currentStatus: "major_outage"
     });
+
+    await mock.close();
+  });
+
+  it("creates one offline incident and resolves it when the service recovers", async () => {
+    runtime!.close();
+    store = new StatusStore(":memory:");
+    store.recordCheck({
+      serviceId: "public-api",
+      currentStatus: "operational",
+      status: "operational",
+      responseTimeMs: 80,
+      details: { reason: "seed_online_state" }
+    });
+    const monitorConfig = testConfig({ PLATFORM_BASE_URL: "http://127.0.0.1:39999" });
+    runtime = createApp({
+      config: monitorConfig,
+      store,
+      enableMonitor: false
+    });
+
+    await request(runtime.app)
+      .post("/api/admin/checks/run")
+      .set("authorization", `Bearer ${adminToken}`)
+      .send({})
+      .expect(200);
+    await request(runtime.app)
+      .post("/api/admin/checks/run")
+      .set("authorization", `Bearer ${adminToken}`)
+      .send({})
+      .expect(200);
+
+    let incidents = store.listIncidents(20).filter((incident) =>
+      incident.affectedServiceIds.includes("public-api")
+    );
+    expect(incidents).toHaveLength(1);
+    expect(incidents[0]).toMatchObject({ status: "investigating" });
+
+    const mock = await startMockPlatform((pathName) => {
+      if (pathName === "/api/status") {
+        return {
+          status: 200,
+          body: {
+            categories: [
+              {
+                name: "Web",
+                services: [
+                  {
+                    id: "public-api",
+                    currentStatus: "operational",
+                    responseTimeMs: 65,
+                    uptimePercentage: 100
+                  }
+                ]
+              }
+            ]
+          }
+        };
+      }
+      return { status: 404, body: { ok: false } };
+    });
+    monitorConfig.PLATFORM_BASE_URL = mock.url;
+
+    await request(runtime.app)
+      .post("/api/admin/checks/run")
+      .set("authorization", `Bearer ${adminToken}`)
+      .send({})
+      .expect(200);
+
+    incidents = store.listIncidents(20).filter((incident) =>
+      incident.affectedServiceIds.includes("public-api")
+    );
+    expect(incidents).toHaveLength(1);
+    expect(incidents[0]).toMatchObject({ status: "resolved" });
 
     await mock.close();
   });

@@ -1,4 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  effectiveStatus,
+  normalizePercentage,
+  serviceVisualStatus,
+  visualStatusLabel
+} from "./statusView";
 
 type PublicStatus =
   | "operational"
@@ -239,19 +245,11 @@ function normalizeHistory(history: HistoryStatus[], windowKey: WindowKey) {
   return [...filler, ...history];
 }
 
-function serviceStatusToHistory(status: PublicStatus): HistoryStatus {
-  const safeStatus = normalizePublicStatus(status);
-  if (safeStatus === "operational") return "operational";
-  if (safeStatus === "degraded") return "degraded";
-  if (safeStatus === "maintenance") return "maintenance";
-  if (safeStatus === "unknown") return "no_data";
-  return "down";
-}
-
 function visualHistory(service: Service, windowKey: WindowKey) {
-  const desired = windows[windowKey].bars;
-  const status = serviceStatusToHistory(service.currentStatus);
-  return Array.from({ length: desired }, () => status);
+  if (effectiveStatus(service) === "unknown") {
+    return Array.from({ length: windows[windowKey].bars }, () => "no_data" as HistoryStatus);
+  }
+  return normalizeHistory(service.history, windowKey);
 }
 
 function incidentText(service: Service) {
@@ -404,7 +402,7 @@ function LiveIncidentFeed({ incidents }: { incidents: LiveIncident[] }) {
   );
 }
 
-function ServiceRow({
+function ServiceStatusCard({
   service,
   selected,
   windowKey,
@@ -415,19 +413,37 @@ function ServiceRow({
   windowKey: WindowKey;
   onSelect: () => void;
 }) {
-  const uptime = safeUptime(service);
-  const currentStatus = normalizePublicStatus(service.currentStatus);
+  const visualStatus = serviceVisualStatus(service);
+  const currentStatus = effectiveStatus(service);
+  const online = visualStatus !== "offline";
+  const uptime = online ? normalizePercentage(service.uptimePercentage) : 0;
+  const statusLabel = visualStatusLabel(visualStatus);
+  const progressLabel = `${statusLabel}: ${uptime.toFixed(2)}% de disponibilidade`;
 
   return (
-    <article className={`service-row ${selected ? "selected" : ""}`}>
+    <article className={`service-row ${visualStatus} ${selected ? "selected" : ""}`}>
       <button className="service-row__main" onClick={onSelect} aria-pressed={selected}>
-        <span className={`uptime-chip ${statusClass(currentStatus)}`}>
-          {currentStatus === "unknown" ? "0%" : `${uptime.toFixed(2)}%`}
+        <span className={`status-dot ${visualStatus}`} aria-hidden="true" />
+        <span className={`uptime-chip ${visualStatus}`}>
+          {online ? `${uptime.toFixed(2)}%` : "Offline"}
         </span>
         <span className="service-name">
           <strong>{service.name}</strong>
+          <small>{statusLabel}</small>
         </span>
       </button>
+      <div className="service-progress" aria-label={progressLabel}>
+        <div className="progress-track">
+          <span
+            className={`progress-fill ${visualStatus} ${online ? "active" : ""}`}
+            style={{ width: `${uptime}%` }}
+          />
+        </div>
+        <div className="service-meta">
+          <span>{formatMs(online ? service.responseTimeMs : null)}</span>
+          <span>{formatDate(service.lastCheckedAt)}</span>
+        </div>
+      </div>
       <HistoryBars service={service} windowKey={windowKey} />
     </article>
   );
@@ -461,7 +477,7 @@ function CategoryPanel({
       {open ? (
         <div className="service-list">
           {category.services.map((service) => (
-            <ServiceRow
+            <ServiceStatusCard
               key={service.id}
               service={service}
               selected={selectedServiceId === service.id}

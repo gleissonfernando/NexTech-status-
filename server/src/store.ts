@@ -506,6 +506,15 @@ export class StatusStore {
       .map((row) => toIncident(row as Row));
   }
 
+  getActiveIncidentForService(serviceId: string): IncidentRecord | null {
+    return (
+      this.listIncidents(100).find(
+        (incident) =>
+          incident.status !== "resolved" && incident.affectedServiceIds.includes(serviceId)
+      ) ?? null
+    );
+  }
+
   createIncident(input: {
     title: string;
     status: IncidentStatus;
