@@ -351,7 +351,7 @@ function HistoryBars({
       className="history-wrap"
       aria-label={`Histórico de ${service.name} em ${windows[windowKey].label}`}
     >
-      <div className="history-bars" style={{ gridTemplateColumns: `repeat(${history.length}, 1fr)` }}>
+      <div className="history-bars" style={{ gridTemplateColumns: `repeat(${history.length}, minmax(2px, 1fr))` }}>
         {history.map((status, index) => {
           const checkedAt = new Date(now - (history.length - index) * stepMs);
           const httpStatus = status === "down" ? 503 : status === "no_data" ? 0 : 200;

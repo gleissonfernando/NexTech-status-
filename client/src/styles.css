@@ -198,8 +198,8 @@ a {
 
 .service-row {
   display: grid;
-  grid-template-columns: minmax(210px, 270px) minmax(180px, 240px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(190px, 250px) minmax(170px, 220px) minmax(0, 1fr);
+  gap: 14px;
   align-items: center;
   min-height: 96px;
   padding: 14px;
@@ -343,20 +343,21 @@ a {
 }
 
 .history-wrap {
+  width: 100%;
   min-width: 0;
+  overflow: hidden;
 }
 
 .history-bars {
   display: grid;
   width: 100%;
-  min-width: 380px;
   height: 28px;
-  gap: 3px;
+  gap: 2px;
 }
 
 .history-bar {
   display: block;
-  min-width: 3px;
+  min-width: 0;
   height: 100%;
   border-radius: 2px;
   background: var(--gray);
@@ -627,7 +628,7 @@ textarea {
   }
 
   .history-wrap {
-    overflow-x: auto;
+    overflow: hidden;
   }
 
   .admin-grid {
