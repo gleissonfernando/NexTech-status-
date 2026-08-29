@@ -284,7 +284,7 @@ export class Monitor {
     void this.runOnce();
     this.timer = setInterval(
       () => void this.runOnce(),
-      Math.min(this.config.DEFAULT_CHECK_INTERVAL_SECONDS, 5) * 1000
+      Math.max(this.config.DEFAULT_CHECK_INTERVAL_SECONDS, 5) * 1000
     );
     this.timer.unref();
   }

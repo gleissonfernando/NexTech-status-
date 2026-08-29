@@ -495,10 +495,8 @@ function DetailPanel({ service, onClose }: { service: Service | null; onClose: (
   if (!service) return null;
 
   const uptime = safeUptime(service);
-  const uptime7d = Math.min(100, uptime + 0.018);
-  const uptime90d = Math.max(0, uptime - 0.24);
   const response = safeNumber(service.responseTimeMs);
-  const bars = [0.7, 0.9, 0.62, 0.78, 0.56, 0.82, 0.68, 0.74, 0.58, 0.86, 0.7, 0.64];
+  const recentHistory = service.history.slice(-12);
 
   return (
     <aside className="detail-modal" role="dialog" aria-modal="true" aria-label={`Detalhes de ${service.name}`}>
@@ -519,16 +517,16 @@ function DetailPanel({ service, onClose }: { service: Service | null; onClose: (
           <strong>{uptime.toFixed(3)}%</strong>
         </span>
         <span>
-          <small>Disponibilidade 7d</small>
-          <strong>{uptime7d.toFixed(3)}%</strong>
+          <small>Status atual</small>
+          <strong>{visualStatusLabel(serviceVisualStatus(service))}</strong>
         </span>
         <span>
-          <small>Disponibilidade 90d</small>
-          <strong>{uptime90d.toFixed(3)}%</strong>
+          <small>Criticidade</small>
+          <strong>{service.critical ? "Crítico" : "Padrão"}</strong>
         </span>
         <span>
-          <small>Latência média</small>
-          <strong>{formatMs(response ? Math.round(response * 1.12) : null)}</strong>
+          <small>Latência atual</small>
+          <strong>{formatMs(response || service.responseTimeMs === 0 ? response : null)}</strong>
         </span>
       </div>
 
@@ -538,10 +536,21 @@ function DetailPanel({ service, onClose }: { service: Service | null; onClose: (
           <strong>{formatMs(service.responseTimeMs)}</strong>
         </div>
         <div className="mini-chart">
-          {bars.map((height, index) => (
+          {recentHistory.map((status, index) => (
             <span
-              key={`${service.id}-latency-${index}`}
-              style={{ height: `${Math.max(16, height * 100)}%` }}
+              key={`${service.id}-history-${status}-${index}`}
+              className={statusClass(status)}
+              style={{
+                height: `${
+                  status === "no_data"
+                    ? 18
+                    : status === "operational"
+                      ? 44
+                      : status === "degraded"
+                        ? 68
+                        : 92
+                }%`
+              }}
             />
           ))}
         </div>
@@ -550,19 +559,19 @@ function DetailPanel({ service, onClose }: { service: Service | null; onClose: (
       <dl className="detail-list">
         <div>
           <dt>Responsável técnico</dt>
-          <dd>Equipe SRE NextTech</dd>
+          <dd>Equipe SRE NexTech</dd>
         </div>
         <div>
-          <dt>Região monitorizada</dt>
-          <dd>BR-Sudeste / São Paulo</dd>
+          <dt>Categoria</dt>
+          <dd>{service.category}</dd>
         </div>
         <div>
-          <dt>URL monitorizada</dt>
-          <dd>https://status.nexttech.local/.../{service.id}</dd>
+          <dt>Identificador</dt>
+          <dd>{service.id}</dd>
         </div>
         <div>
-          <dt>Última falha</dt>
-          <dd>{service.currentStatus === "operational" ? "Sem falhas recentes" : "Detectada na janela atual"}</dd>
+          <dt>Última verificação</dt>
+          <dd>{formatDate(service.lastCheckedAt)}</dd>
         </div>
       </dl>
     </aside>

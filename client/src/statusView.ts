@@ -14,7 +14,7 @@ export type StatusService = {
   lastCheckedAt: string | null;
 };
 
-export const STATUS_STALE_TIMEOUT = 60_000;
+export const STATUS_STALE_TIMEOUT = 180_000;
 
 export const statusThresholds = {
   operational: 90,

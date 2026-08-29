@@ -113,11 +113,8 @@ a {
 .hero-metrics,
 .summary-grid,
 .toolbar,
-.footer,
 .text-button,
 .service-row__metrics,
-.detail-modal,
-.section-block,
 .toast {
   display: none;
 }
@@ -546,6 +543,230 @@ a {
   border-left-color: #71717a;
 }
 
+.section-block {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid rgba(244, 196, 48, 0.18);
+  padding-bottom: 9px;
+}
+
+.section-heading h2,
+.section-heading p,
+.event-card h3,
+.event-card p {
+  margin: 0;
+}
+
+.section-heading h2 {
+  color: var(--yellow);
+  font-size: 0.86rem;
+}
+
+.section-heading p,
+.event-card p,
+.event-card small,
+.compact-dl,
+.detail-list {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.section-heading > strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.event-list,
+.maintenance-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.event-card {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 13px 14px;
+  background: linear-gradient(180deg, #111, #080808);
+}
+
+.event-card__top,
+.compact-dl div,
+.detail-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.severity {
+  color: var(--yellow);
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.severity.critical {
+  color: var(--red);
+}
+
+.severity.maintenance {
+  color: var(--blue);
+}
+
+.incident-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.incident-steps span {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+
+.incident-steps .done {
+  border-color: rgba(22, 229, 141, 0.55);
+  color: var(--green);
+}
+
+.compact-dl,
+.detail-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.compact-dl dt,
+.detail-list dt {
+  color: var(--muted);
+}
+
+.compact-dl dd,
+.detail-list dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.detail-modal {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 20;
+  display: grid;
+  width: min(390px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  gap: 14px;
+  overflow: auto;
+  border: 1px solid rgba(244, 196, 48, 0.24);
+  border-radius: 7px;
+  padding: 16px;
+  background: #0b0b0d;
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.58);
+}
+
+.panel-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-title h2,
+.panel-title small {
+  margin: 0;
+}
+
+.panel-title h2 {
+  font-size: 1rem;
+}
+
+.panel-title small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metric-grid span {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  background: #080809;
+}
+
+.metric-grid small {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.metric-grid strong {
+  font-size: 0.86rem;
+}
+
+.chart-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.chart-panel__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.mini-chart {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  align-items: end;
+  gap: 5px;
+  height: 90px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  background: #080809;
+}
+
+.mini-chart span {
+  min-height: 8px;
+  border-radius: 3px 3px 0 0;
+  background: currentColor;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 24px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
 .admin-section {
   display: grid;
   gap: 14px;
@@ -633,6 +854,18 @@ textarea {
 
   .admin-grid {
     grid-template-columns: 1fr;
+  }
+
+  .section-heading,
+  .footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .detail-modal {
+    inset: auto 10px 10px;
+    width: auto;
+    max-height: 82vh;
   }
 }
 
