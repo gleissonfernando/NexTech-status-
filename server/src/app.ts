@@ -154,7 +154,7 @@ export function createApp(options?: {
   const events = new StatusEvents(store);
   const monitor = new Monitor(config, store, () => events.broadcast(true));
   const app = express();
-  app.set("trust proxy", config.NODE_ENV === "production" ? 1 : false);
+  app.set("trust proxy", 1);
 
   app.disable("x-powered-by");
   app.use(
